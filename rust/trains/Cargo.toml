@@ -1,0 +1,9 @@
+[package]
+name = "trains"
+version = "0.1.0"
+authors = ["haiwei"]
+
+[dependencies]
+libc = "0.2.4"
+nix = "0.4.2"
+errno = "0.1.6"

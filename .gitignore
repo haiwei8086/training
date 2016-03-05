@@ -1,0 +1,19 @@
+# Hidden files
+.*
+!.gitignore
+!.gitkeep
+
+# OS files
+Thumbs.db
+Desktop.ini
+
+!.bowerrc
+!*/**/.jshintrc
+
+**/target/*
+
+**/cmake_install.cmake
+**/CMakeCache.txt
+**/CMakeFiles/**
+**/bin/**
+

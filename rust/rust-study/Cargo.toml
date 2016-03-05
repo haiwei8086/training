@@ -1,0 +1,12 @@
+[package]
+name = "study"
+version = "0.1.0"
+authors = ["Haiwei Li <haiwei8086@gmail.com>"]
+
+
+# guessing game
+[dependencies]
+
+[[test]]
+name = "tests"
+path = "tests/test.rs"
