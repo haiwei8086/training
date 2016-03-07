@@ -60,26 +60,3 @@ fn create_socket() -> Result<RawFd, usize> {
 
     return Ok(fd);
 }
-
-/*
-let socket_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-let ip = get_in_addr(127, 0, 0, 1);
-let addr = get_socket_addr(ip, 9000);
-let sockaddr: &libc::sockaddr = unsafe { mem::transmute(&addr) };
-
-
-fn get_in_addr(a: u8, b: u8, c: u8, d: u8) -> libc::in_addr {
-    let ip = (((a as u32) << 24) | ((b as u32) << 16) |
-             ((c as u32) <<  8) | (d as u32)).to_be();
-    libc::in_addr { s_addr: ip }
-}
-
-fn get_socket_addr(ip: libc::in_addr, port: u16) -> libc::sockaddr_in {
-    libc::sockaddr_in {
-        sin_family: libc::AF_INET as libc::sa_family_t,
-        sin_port: port.to_be(),
-        sin_addr: ip,
-        .. unsafe { mem::zeroed() }
-    }
-}
-*/
