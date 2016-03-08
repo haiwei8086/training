@@ -9,9 +9,8 @@ use super::addr;
 const IP: [u8; 4] = [0, 0, 0, 0];
 const PORT: u16 = 15000;
 const MAX_BUFFER: usize = 1024;
-const MAX_LISTEN_QUEUE: i32 = 1000;
-const MAX_EVENTS: i32 = 1024;
-const MAX_EPOLL: i32 = 100;
+const MAX_LISTEN_QUEUE: usize = 100;
+const MAX_EVENTS: usize = 128;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -20,8 +19,31 @@ pub struct EpollEvent {
     pub data: u64
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct linger {
+    pub l_onoff: c_int,
+    pub l_linger: c_int
+}
+
+const EPOLLIN: u32 = 0x001;
+const EPOLLPRI: u32 = 0x002;
+const EPOLLOUT: u32 = 0x004;
+const EPOLLRDNORM: u32 = 0x040;
+const EPOLLWRBAND: u32 = 0x200;
+const EPOLLRDBAND: u32 = 0x080;
+const EPOLLWRNORM: u32 = 0x100;
+const EPOLLMSG: u32 = 0x400;
+const EPOLLERR: u32 = 0x008;
+const EPOLLHUP: u32 = 0x010;
+const EPOLLRDHUP: u32 = 0x2000;
+const EPOLLWAKEUP: u32 = 1 << 29;
+const EPOLLONESHOT: u32 = 1 << 30;
+const EPOLLET: u32 = 1 << 31;
+const EAGAIN: i32 = 11;
+
 extern {
-    fn epoll_create(flags: c_int) -> c_int;
+    fn epoll_create1(flags: c_int) -> c_int;
     fn epoll_ctl(epfd: c_int, op: c_int, fd: c_int, event: *mut EpollEvent) -> c_int;
     fn epoll_wait(epfd: c_int, event: *mut EpollEvent, maxevents: c_int, timeout: c_int) -> c_int;
 }
@@ -42,6 +64,8 @@ fn socket_bind() -> Result<RawFd, i32> {
         return Err(-1);
     }
 
+    set_socket_opt(listenfd);
+
     let addr = addr::SockAddr::new(addr::IpAddr::new_v4(IP[0],IP[1],IP[2],IP[3]), PORT);
     let (addr_ptr, socket_len) = unsafe { addr.as_ffi_pair() };
 
@@ -49,7 +73,7 @@ fn socket_bind() -> Result<RawFd, i32> {
         println!("Socket bind failed");
         return Err(-2);
     }
-    if unsafe { libc::listen(listenfd, MAX_LISTEN_QUEUE) } < 0 {
+    if unsafe { libc::listen(listenfd, MAX_LISTEN_QUEUE as i32) } < 0 {
         println!("Socket listenning failed!");
         return Err(-3);
     }
@@ -72,21 +96,44 @@ fn make_non_blocking(listenfd: RawFd) {
     }
 }
 
+fn set_socket_opt(listenfd: RawFd) {
+    let ptr: *const libc::c_void = unsafe {
+        let l = linger {
+            l_onoff: 1,
+            l_linger: 5
+        };
+        mem::transmute(l)
+    };
+    let len = unsafe {
+        mem::size_of::<linger>() as libc::socklen_t
+    };
+
+    let ret = unsafe {
+        libc::setsockopt(listenfd, libc::SOL_SOCKET, libc::SO_LINGER, ptr, len)
+    };
+
+    if ret < 0 {
+        println!("Set socket opt failed!");
+    }
+}
+
+
+
 fn event_loop(listenfd: RawFd) {
 
-    let epfd = unsafe { epoll_create(MAX_EPOLL) };
+    let epfd = unsafe { epoll_create1(0) };
     if epfd < 0 {
         println!("Create epoll field: {}", epfd);
         return;
     }
 
-    add_event(epfd, listenfd, libc::EPOLLIN | libc::EPOLLOUT | libc::EPOLLET);
+    let mut events: Vec<EpollEvent> = Vec::with_capacity(MAX_EVENTS);
+    unsafe { events.set_len(MAX_EVENTS) };
 
-    let mut events = Vec::<EpollEvent>::with_capacity(MAX_EVENTS as usize);
-    unsafe { events.set_len(MAX_EVENTS as usize); }
+    add_event(epfd, listenfd, EPOLLIN | EPOLLET);
 
     loop {
-        let ret = unsafe { epoll_wait(epfd, events.as_mut_ptr(), MAX_EVENTS, -1) };
+        let ret = unsafe { epoll_wait(epfd, events.as_mut_ptr(), MAX_EVENTS as i32, -1) };
         if ret < 0 {
             println!("Epoll wait failed: {}", ret);
             return;
@@ -98,20 +145,20 @@ fn event_loop(listenfd: RawFd) {
 fn event_handle(epfd: RawFd, listenfd: RawFd, events: &[EpollEvent], num: i32) {
 
     for i in events {
-        if i.events as i32 == libc::EPOLLERR || i.events as i32 == libc::EPOLLHUP {
+        let clientfd = i.data as i32;
+
+        if (i.events == EPOLLERR || i.events == EPOLLHUP) && i.events != EPOLLIN {
             println!("Epoll error!");
-            /*
             unsafe {
-                libc::close(i.data as i32)
+                libc::close(clientfd)
             };
-            */
             continue;
-        } else if listenfd as u64 == i.data && libc::EPOLLIN as u32 == i.events {
-            handle_accpet(epfd, i.data as i32);
-        } else if libc::EPOLLIN as u32 == i.events {
-            handle_read(epfd, i.data as i32);
-        } else if libc::EPOLLOUT as u32 == i.events {
-            handle_write(epfd, i.data as i32, &("Welcome to web server".as_bytes()));
+        } else if listenfd as u64 == i.data && EPOLLIN == i.events {
+            handle_accpet(epfd, clientfd);
+        } else if EPOLLIN == i.events {
+            handle_read(epfd, clientfd);
+        } else if EPOLLOUT == i.events {
+            handle_write(epfd, clientfd, &("Welcome to web server".as_bytes()));
         }
     }
 }
@@ -120,40 +167,33 @@ fn handle_accpet(epfd: RawFd, fd: RawFd) {
 
     let mut client_addr: libc::sockaddr = unsafe { mem::uninitialized() };
     let mut client_sock_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+
     let clientfd = unsafe { libc::accept(fd, &mut client_addr, &mut client_sock_len) };
     if clientfd < 0 {
-        match Error::last_os_error().raw_os_error() {
-            Some(x) => if x != libc::EAGAIN && x != libc::EPROTO && x != libc::EINTR {
-                println!("Accept connection failed: {:?}", clientfd);
-                remove_event(epfd, fd, libc::EPOLLIN);
-                return;
-            },
-            None => (),
-        }
+        println!("Accept connection failed: {:?}", clientfd);
+    } else {
+        let addr: libc::sockaddr_in = unsafe { mem::transmute(client_addr) };
+        println!("Accept a client connection");
+        println!("Client family: {:?}", addr.sin_family);
+        println!("Client ip: {:?}, port: {:?}", addr.sin_addr.s_addr, addr.sin_port);
+
+        add_event(epfd, clientfd, EPOLLIN | EPOLLET);
     }
-
-    let addr: libc::sockaddr_in = unsafe { mem::transmute(client_addr) };
-    println!("Accept a client connection");
-    println!("Client family: {:?}", addr.sin_family);
-    println!("Client ip: {:?}, port: {:?}", addr.sin_addr.s_addr, addr.sin_port);
-
-    make_non_blocking(clientfd);
-    add_event(epfd, clientfd, libc::EPOLLIN | libc::EPOLLET);
 }
 
 fn handle_read(epfd: RawFd, fd: RawFd) {
 
+    /*
     let mut buf = unsafe {
         let mut array: [u8; MAX_BUFFER] = mem::uninitialized();
         array
     };
+    */
 
-    /*
-    let mut buf = Vec::<u8>::with_capacity(MAX_BUFFER);
+    let mut buf: Vec<u8> = Vec::with_capacity(MAX_BUFFER);
     unsafe {
         buf.set_len(MAX_BUFFER)
     };
-    */
 
     let read_count = unsafe {
         libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, MAX_BUFFER)
@@ -162,24 +202,38 @@ fn handle_read(epfd: RawFd, fd: RawFd) {
     if read_count < 0 {
         println!("Read error: {:?}", Error::last_os_error());
 
-        match Error::last_os_error().raw_os_error() {
-            Some(x) => if read_count == -1 && x != libc::EAGAIN {
-                println!("Can not read any data, client closed.");
-
+        let mut done = false;
+        done = match Error::last_os_error().raw_os_error() {
+            Some(EAGAIN) => {
+                modify_event(epfd, fd, EPOLLOUT | EPOLLET);
+                true
+            },
+            _ => {
+                println!("Read failed: {:?}", read_count);
                 unsafe {
                     libc::close(fd)
                 };
-                // remove_event(epfd, fd, libc::EPOLLIN);
-                return;
+                remove_event(epfd, fd, EPOLLIN | EPOLLET);
+                true
             },
-            None => println!("Read failed: {:?}", read_count),
+        };
+
+        if done {
+            return;
         }
+    } else if read_count == 0 {
+        println!("Can not read any data, may be client closed.");
+        unsafe {
+            libc::close(fd)
+        };
+        remove_event(epfd, fd, EPOLLIN | EPOLLET);
+        return;
     }
 
     println!("Read count: {:?}, buf: {:?}", read_count, buf.len());
     println!("Read content: \n{:?}", String::from_utf8_lossy(&buf[0..read_count as usize]));
 
-    modify_event(epfd, fd, libc::EPOLLOUT);
+    modify_event(epfd, fd, EPOLLOUT | EPOLLET);
 }
 
 fn handle_write(epfd: RawFd, fd: RawFd, buf: &[u8]) {
@@ -193,7 +247,7 @@ fn handle_write(epfd: RawFd, fd: RawFd, buf: &[u8]) {
         unsafe {
             libc::close(fd)
         };
-        remove_event(epfd, fd, libc::EPOLLOUT);
+        remove_event(epfd, fd, EPOLLOUT | EPOLLET);
         return;
     }
 
@@ -203,13 +257,13 @@ fn handle_write(epfd: RawFd, fd: RawFd, buf: &[u8]) {
     unsafe {
         libc::close(fd)
     };
-    remove_event(epfd, fd, libc::EPOLLOUT);
+    // modify_event(epfd, fd, EPOLLIN | EPOLLET);
 }
 
-fn add_event(epfd: RawFd, fd: RawFd, state: libc::c_int){
+fn add_event(epfd: RawFd, fd: RawFd, state: u32){
 
     let mut event = EpollEvent {
-        events: state as u32,
+        events: state,
         data: fd as u64
     };
 
@@ -218,10 +272,10 @@ fn add_event(epfd: RawFd, fd: RawFd, state: libc::c_int){
     }
 }
 
-fn modify_event(epfd: RawFd, fd: RawFd, state: libc::c_int){
+fn modify_event(epfd: RawFd, fd: RawFd, state: u32){
 
     let mut event = EpollEvent {
-        events: state as u32,
+        events: state,
         data: fd as u64
     };
 
@@ -230,14 +284,11 @@ fn modify_event(epfd: RawFd, fd: RawFd, state: libc::c_int){
     }
 }
 
-fn remove_event(epfd: RawFd, fd: RawFd, state: libc::c_int) {
+fn remove_event(epfd: RawFd, fd: RawFd, state: u32) {
 
-    let mut event = EpollEvent {
-        events: state as u32,
-        data: fd as u64
-    };
+    return;
 
-    if unsafe{ epoll_ctl(epfd, libc::EPOLL_CTL_DEL, fd, &mut event) } < 0 {
+    if unsafe{ epoll_ctl(epfd, libc::EPOLL_CTL_DEL, fd, ptr::null_mut()) } < 0 {
         println!("Remove epoll event failed");
     }
 }
