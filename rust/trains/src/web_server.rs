@@ -8,10 +8,10 @@ use super::addr;
 
 const IP: [u8; 4] = [0, 0, 0, 0];
 const PORT: u16 = 15000;
-const MAX_BUFFER: usize = 1000;
+const MAX_BUFFER: usize = 1024;
 const MAX_LISTEN_QUEUE: i32 = 1000;
-const MAX_EVENTS: i32 = 100;
-const MAX_EPOLL: i32 = 1000;
+const MAX_EVENTS: i32 = 1024;
+const MAX_EPOLL: i32 = 100;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -155,34 +155,24 @@ fn handle_read(epfd: RawFd, fd: RawFd) {
     };
     */
 
-    let mut len = 0;
-    let mut read_count = 0;
+    let read_count = unsafe {
+        libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, MAX_BUFFER)
+    };
 
-    while true {
-        len = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, MAX_BUFFER)};
-        println!("Read....{:?}", len);
-        read_count += len;
-        if len <= 0 {
-            break;
-        }
-    }
+    if read_count < 0 {
+        println!("Read error: {:?}", Error::last_os_error());
 
-    if len == -1 {
-        println!("Read error: {:?}", Error::last_os_error().raw_os_error());
         match Error::last_os_error().raw_os_error() {
-            Some(x) => if x != libc::EAGAIN {
-                if read_count < 0 {
-                    println!("Read failed: {:?}", read_count);
-                } else {
-                    println!("Can not read any data, client closed.");
-                }
+            Some(x) => if read_count == -1 && x != libc::EAGAIN {
+                println!("Can not read any data, client closed.");
+
                 unsafe {
                     libc::close(fd)
                 };
                 // remove_event(epfd, fd, libc::EPOLLIN);
                 return;
             },
-            None => (),
+            None => println!("Read failed: {:?}", read_count),
         }
     }
 
@@ -213,7 +203,7 @@ fn handle_write(epfd: RawFd, fd: RawFd, buf: &[u8]) {
     unsafe {
         libc::close(fd)
     };
-    // remove_event(epfd, fd, libc::EPOLLOUT);
+    remove_event(epfd, fd, libc::EPOLLOUT);
 }
 
 fn add_event(epfd: RawFd, fd: RawFd, state: libc::c_int){
