@@ -57,6 +57,13 @@ static int socket_bind(const char* ip,int port)
         perror("socket error:");
         exit(1);
     }
+
+    int rep = 1;
+    if(setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &rep, sizeof(rep)) == -1) {
+        perror("socket reuse failed!");
+        exit(1);
+    }
+
     bzero(&servaddr,sizeof(servaddr));
     servaddr.sin_family = AF_INET;
     inet_pton(AF_INET,ip,&servaddr.sin_addr);

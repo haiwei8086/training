@@ -7,7 +7,7 @@ use libc::{c_int};
 use super::addr;
 
 const IP: [u8; 4] = [0, 0, 0, 0];
-const PORT: u16 = 15000;
+const PORT: u16 = 9000;
 const MAX_BUFFER: usize = 1024;
 const MAX_LISTEN_QUEUE: usize = 100;
 const MAX_EVENTS: usize = 128;
@@ -21,7 +21,7 @@ pub struct EpollEvent {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct linger {
+pub struct Linger {
     pub l_onoff: c_int,
     pub l_linger: c_int
 }
@@ -73,6 +73,7 @@ fn socket_bind() -> Result<RawFd, i32> {
         println!("Socket bind failed");
         return Err(-2);
     }
+
     if unsafe { libc::listen(listenfd, MAX_LISTEN_QUEUE as i32) } < 0 {
         println!("Socket listenning failed!");
         return Err(-3);
@@ -97,27 +98,58 @@ fn make_non_blocking(listenfd: RawFd) {
 }
 
 fn set_socket_opt(listenfd: RawFd) {
+
+    let reuse = unsafe {
+        let yes = 1;
+        libc::setsockopt(
+            listenfd,
+            libc::SOL_SOCKET,
+            libc::SO_REUSEADDR,
+            &yes as *const _ as *const libc::c_void,
+            mem::size_of::<c_int>() as libc::socklen_t)
+    };
+    if reuse < 0 {
+        println!("Set socket opt re-use failed!");
+        println!("{:?}", Error::last_os_error());
+    }
+
+    /*
+    let keepalive = unsafe {
+        let yes = 1;
+        libc::setsockopt(
+            listenfd,
+            libc::SOL_SOCKET,
+            libc::SO_KEEPALIVE,
+            &yes as *const _ as *const libc::c_void,
+            mem::size_of::<c_int>() as libc::socklen_t)
+    };
+    if keepalive < 0 {
+        println!("Set socket opt keepalive failed!");
+        println!("{:?}", Error::last_os_error());
+    }
+    */
+
+    let l = Linger {
+        l_onoff: 1,
+        l_linger: 5
+    };
+
     let ptr: *const libc::c_void = unsafe {
-        let l = linger {
-            l_onoff: 1,
-            l_linger: 5
-        };
-        mem::transmute(l)
+        mem::transmute(&l)
     };
     let len = unsafe {
-        mem::size_of::<linger>() as libc::socklen_t
+        mem::size_of::<Linger>()
     };
 
     let ret = unsafe {
-        libc::setsockopt(listenfd, libc::SOL_SOCKET, libc::SO_LINGER, ptr, len)
+        libc::setsockopt(listenfd, libc::SOL_SOCKET, libc::SO_LINGER, ptr, len as libc::socklen_t)
     };
 
     if ret < 0 {
         println!("Set socket opt failed!");
+        println!("{:?}", Error::last_os_error());
     }
 }
-
-
 
 fn event_loop(listenfd: RawFd) {
 
@@ -142,23 +174,19 @@ fn event_loop(listenfd: RawFd) {
     }
 }
 
-fn event_handle(epfd: RawFd, listenfd: RawFd, events: &[EpollEvent], num: i32) {
+fn event_handle(epfd: RawFd, listenfd: RawFd, events: &Vec<EpollEvent>, num: i32) {
+    println!("Epoll events count: {:?}", num);
 
-    for i in events {
-        let clientfd = i.data as i32;
+    for i in 0..num {
+        let item = events[i as usize];
+        let clientfd = item.data as i32;
 
-        if (i.events == EPOLLERR || i.events == EPOLLHUP) && i.events != EPOLLIN {
-            println!("Epoll error!");
-            unsafe {
-                libc::close(clientfd)
-            };
-            continue;
-        } else if listenfd as u64 == i.data && EPOLLIN == i.events {
+        if listenfd as u64 == item.data && EPOLLIN == item.events {
             handle_accpet(epfd, clientfd);
-        } else if EPOLLIN == i.events {
+        } else if EPOLLIN == item.events {
             handle_read(epfd, clientfd);
-        } else if EPOLLOUT == i.events {
-            handle_write(epfd, clientfd, &("Welcome to web server".as_bytes()));
+        } else if EPOLLOUT == item.events {
+            handle_write(epfd, clientfd);
         }
     }
 }
@@ -174,8 +202,9 @@ fn handle_accpet(epfd: RawFd, fd: RawFd) {
     } else {
         let addr: libc::sockaddr_in = unsafe { mem::transmute(client_addr) };
         println!("Accept a client connection");
-        println!("Client family: {:?}", addr.sin_family);
         println!("Client ip: {:?}, port: {:?}", addr.sin_addr.s_addr, addr.sin_port);
+
+        // make_non_blocking(clientfd);
 
         add_event(epfd, clientfd, EPOLLIN | EPOLLET);
     }
@@ -205,7 +234,6 @@ fn handle_read(epfd: RawFd, fd: RawFd) {
         let mut done = false;
         done = match Error::last_os_error().raw_os_error() {
             Some(EAGAIN) => {
-                modify_event(epfd, fd, EPOLLOUT | EPOLLET);
                 true
             },
             _ => {
@@ -213,7 +241,6 @@ fn handle_read(epfd: RawFd, fd: RawFd) {
                 unsafe {
                     libc::close(fd)
                 };
-                remove_event(epfd, fd, EPOLLIN | EPOLLET);
                 true
             },
         };
@@ -226,7 +253,6 @@ fn handle_read(epfd: RawFd, fd: RawFd) {
         unsafe {
             libc::close(fd)
         };
-        remove_event(epfd, fd, EPOLLIN | EPOLLET);
         return;
     }
 
@@ -236,7 +262,10 @@ fn handle_read(epfd: RawFd, fd: RawFd) {
     modify_event(epfd, fd, EPOLLOUT | EPOLLET);
 }
 
-fn handle_write(epfd: RawFd, fd: RawFd, buf: &[u8]) {
+fn handle_write(epfd: RawFd, fd: RawFd) {
+
+    let buf: &[u8] = "Welcome to web server".as_bytes();
+
     let write_len = unsafe {
         libc::write(fd, buf as *const _ as *const libc::c_void, buf.len())
     };
@@ -247,7 +276,6 @@ fn handle_write(epfd: RawFd, fd: RawFd, buf: &[u8]) {
         unsafe {
             libc::close(fd)
         };
-        remove_event(epfd, fd, EPOLLOUT | EPOLLET);
         return;
     }
 
@@ -257,7 +285,7 @@ fn handle_write(epfd: RawFd, fd: RawFd, buf: &[u8]) {
     unsafe {
         libc::close(fd)
     };
-    // modify_event(epfd, fd, EPOLLIN | EPOLLET);
+    //modify_event(epfd, fd, EPOLLIN | EPOLLET);
 }
 
 fn add_event(epfd: RawFd, fd: RawFd, state: u32){
@@ -281,14 +309,5 @@ fn modify_event(epfd: RawFd, fd: RawFd, state: u32){
 
     if unsafe{ epoll_ctl(epfd, libc::EPOLL_CTL_MOD, fd, &mut event) } < 0 {
         println!("Modify epoll event failed");
-    }
-}
-
-fn remove_event(epfd: RawFd, fd: RawFd, state: u32) {
-
-    return;
-
-    if unsafe{ epoll_ctl(epfd, libc::EPOLL_CTL_DEL, fd, ptr::null_mut()) } < 0 {
-        println!("Remove epoll event failed");
     }
 }
