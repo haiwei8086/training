@@ -8,7 +8,7 @@ use super::addr;
 
 const IP: [u8; 4] = [0, 0, 0, 0];
 const PORT: u16 = 9000;
-const MAX_BUFFER: usize = 1024;
+const MAX_BUFFER: usize = 1024 * 2;
 const MAX_LISTEN_QUEUE: usize = 100;
 const MAX_EVENTS: usize = 128;
 
@@ -41,6 +41,7 @@ const EPOLLWAKEUP: u32 = 1 << 29;
 const EPOLLONESHOT: u32 = 1 << 30;
 const EPOLLET: u32 = 1 << 31;
 const EAGAIN: i32 = 11;
+const EINTR: i32 = 4;
 
 extern {
     fn epoll_create1(flags: c_int) -> c_int;
@@ -113,7 +114,7 @@ fn set_socket_opt(listenfd: RawFd) {
         println!("{:?}", Error::last_os_error());
     }
 
-    /*
+
     let keepalive = unsafe {
         let yes = 1;
         libc::setsockopt(
@@ -127,7 +128,6 @@ fn set_socket_opt(listenfd: RawFd) {
         println!("Set socket opt keepalive failed!");
         println!("{:?}", Error::last_os_error());
     }
-    */
 
     let l = Linger {
         l_onoff: 1,
@@ -170,24 +170,23 @@ fn event_loop(listenfd: RawFd) {
             println!("Epoll wait failed: {}", ret);
             return;
         }
-        event_handle(epfd, listenfd, &events, ret);
-    }
-}
 
-fn event_handle(epfd: RawFd, listenfd: RawFd, events: &Vec<EpollEvent>, num: i32) {
-    println!("Epoll events count: {:?}", num);
+        for i in 0..ret {
+            let item = events[i as usize];
+            let clientfd = item.data as i32;
 
-    for i in 0..num {
-        let item = events[i as usize];
-        let clientfd = item.data as i32;
-
-        if listenfd as u64 == item.data && EPOLLIN == item.events {
-            handle_accpet(epfd, clientfd);
-        } else if EPOLLIN == item.events {
-            handle_read(epfd, clientfd);
-        } else if EPOLLOUT == item.events {
-            handle_write(epfd, clientfd);
+            if (EPOLLERR == item.events || EPOLLHUP == item.events) && EPOLLIN != item.events {
+                println!("Epoll error: {}", item.events);
+                continue;
+            } else if listenfd as u64 == item.data && EPOLLIN == item.events {
+                handle_accpet(epfd, clientfd);
+            } else if EPOLLIN == item.events {
+                handle_read(epfd, clientfd);
+            } else if EPOLLOUT == item.events {
+                handle_write(epfd, clientfd);
+            }
         }
+
     }
 }
 
@@ -197,14 +196,15 @@ fn handle_accpet(epfd: RawFd, fd: RawFd) {
     let mut client_sock_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
 
     let clientfd = unsafe { libc::accept(fd, &mut client_addr, &mut client_sock_len) };
-    if clientfd < 0 {
+    if clientfd == -1 {
         println!("Accept connection failed: {:?}", clientfd);
+        return;
     } else {
         let addr: libc::sockaddr_in = unsafe { mem::transmute(client_addr) };
         println!("Accept a client connection");
         println!("Client ip: {:?}, port: {:?}", addr.sin_addr.s_addr, addr.sin_port);
 
-        // make_non_blocking(clientfd);
+        make_non_blocking(clientfd);
 
         add_event(epfd, clientfd, EPOLLIN | EPOLLET);
     }
@@ -228,9 +228,10 @@ fn handle_read(epfd: RawFd, fd: RawFd) {
         libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, MAX_BUFFER)
     };
 
-    if read_count < 0 {
+    if read_count == -1 && read_count as i32 != EAGAIN {
         println!("Read error: {:?}", Error::last_os_error());
 
+        /*
         let mut done = false;
         done = match Error::last_os_error().raw_os_error() {
             Some(EAGAIN) => {
@@ -248,6 +249,12 @@ fn handle_read(epfd: RawFd, fd: RawFd) {
         if done {
             return;
         }
+        */
+
+        unsafe {
+            libc::close(fd)
+        };
+        return;
     } else if read_count == 0 {
         println!("Can not read any data, may be client closed.");
         unsafe {
@@ -270,22 +277,26 @@ fn handle_write(epfd: RawFd, fd: RawFd) {
         libc::write(fd, buf as *const _ as *const libc::c_void, buf.len())
     };
 
-    if write_len < 0 {
-        println!("Error number: {:?}", Error::last_os_error());
-        println!("Write data failed: {:?}", write_len);
-        unsafe {
-            libc::close(fd)
-        };
-        return;
+    if write_len == -1 {
+
+        if write_len as i32 == EINTR || write_len as i32 == EAGAIN {
+            println!("Write blocked or eintr, need re-write.");
+        } else {
+            println!("Error number: {:?}", Error::last_os_error());
+            println!("Write data failed: {:?}", write_len);
+            unsafe {
+                libc::close(fd)
+            };
+            return;
+        }
     }
 
-    println!("Write data: {:?}", write_len);
+    println!("Write count: {:?}", write_len);
     println!("Write end --------------------------------------");
 
     unsafe {
         libc::close(fd)
     };
-    //modify_event(epfd, fd, EPOLLIN | EPOLLET);
 }
 
 fn add_event(epfd: RawFd, fd: RawFd, state: u32){
