@@ -170,7 +170,7 @@ static void eventloop(int listenfd) {
     memset(&buf, 0, MAX_BUFFER_SIZE);
 
     epfd = epoll_create1(0);
-    add_event(epfd, listenfd, EPOLLIN | EPOLLET);
+    add_event(epfd, listenfd, EPOLLIN);
 
     while(1) {
         ret = epoll_wait(epfd, events, MAX_EVENTS, -1);

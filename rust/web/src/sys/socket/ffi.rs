@@ -1,3 +1,0 @@
-
-use libc;
-use libc::*;

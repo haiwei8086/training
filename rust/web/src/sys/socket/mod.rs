@@ -1,6 +1,5 @@
 
-mod ip;
-mod consts;
+pub mod ip;
 
 pub use libc::{
     in_addr,

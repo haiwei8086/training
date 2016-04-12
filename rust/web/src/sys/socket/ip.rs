@@ -1,7 +1,6 @@
 use libc;
 use std::{net, mem, fmt, hash, cmp};
 use std::net::{hton, ntoh};
-use super::consts;
 
 #[derive(Copy, PartialEq, Eq, Clone, Hash, Debug)]
 pub enum Ipv6MulticastScope {
@@ -37,13 +36,14 @@ pub struct Ipv4Addr(libc::in_addr);
 pub struct Ipv6Addr(libc::in6_addr);
 
 impl Ipv4Addr {
+
     pub fn new(a: u8, b: u8, c: u8, d: u8) -> Ipv4Addr {
         let addr = libc::in_addr {
             s_addr: hton(((a as u32) << 24) |
                          ((b as u32) << 16) |
                          ((c as u32) <<  8) |
-                          (d as u32)),
-        });
+                          (d as u32))
+        };
 
         Ipv4Addr(addr)
     }
@@ -54,7 +54,7 @@ impl Ipv4Addr {
     }
 
     pub fn any() -> Ipv4Addr {
-        Ipv4Addr(libc::in_addr { s_addr: consts::INADDR_ANY })
+        Ipv4Addr(libc::in_addr { s_addr: 0 })
     }
 
     pub fn to_std(&self) -> net::Ipv4Addr {
@@ -247,7 +247,8 @@ impl Ipv6Addr {
                         (f >> 8) as u8, f as u8,
                         (g >> 8) as u8, g as u8,
                         (h >> 8) as u8, h as u8];
-        Ipv6Addr { addr }
+
+        Ipv6Addr(addr)
     }
 
     /// Returns the eight 16-bit segments that make up this address.
