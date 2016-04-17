@@ -1,22 +1,16 @@
 
-#![feature(slice_patterns)]
+extern crate stain;
 
-extern crate libc;
-
-mod sys;
-
-use sys;
+use stain::net::{ip, addr};
 
 fn main() {
+    stain::version();
 
-    let ip = sys::socket::ip::IPv4Addr::any();
-    println!("{:?}", ip.to_std());
+    let ip = ip::IpAddr::V4(ip::Ipv4Addr::new(127, 0, 0, 1));
+    println!("ip v4: {:?}", ip);
 
-    /*
-    let addr = net::Ipv4Addr::new(127, 0, 0, 1);
-    let ptr = addr.as_inner();
-    println!("{:?}", ptr);
-    */
+    let addr = addr::InetAddr::new(ip, 5000);
+    println!("addr v4: {:?}", addr.to_str());
 
     println!("Hello, world!");
 }

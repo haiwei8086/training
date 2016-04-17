@@ -3,10 +3,18 @@ name = "web"
 version = "0.1.0"
 dependencies = [
  "libc 0.2.8 (registry+git://crates.mirrors.ustc.edu.cn/index)",
+ "stain 0.1.0",
 ]
 
 [[package]]
 name = "libc"
 version = "0.2.8"
 source = "registry+git://crates.mirrors.ustc.edu.cn/index"
+
+[[package]]
+name = "stain"
+version = "0.1.0"
+dependencies = [
+ "libc 0.2.8 (registry+git://crates.mirrors.ustc.edu.cn/index)",
+]
 
