@@ -8,7 +8,7 @@ pub mod libc {
 pub mod error;
 pub mod net;
 
-type Result<T> = std::result::Result<T, error::NsError>;
+type NsResult<T> = std::result::Result<T, error::NsError>;
 
 
 pub fn version() -> String {

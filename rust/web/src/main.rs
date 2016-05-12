@@ -1,6 +1,6 @@
 extern crate nest;
 
-use nest::net::{ip};
+use nest::net::{ip, addr};
 
 
 fn main() {
@@ -12,10 +12,16 @@ fn main() {
 fn nest_test() {
     println!("Version: {:?}", nest::version());
 
-    let ip = ip::IpAddr::V4(ip::Ipv4Addr::new(127, 0, 0, 1));
+    let ip = ip::NsIpAddr::V4(ip::NsIpv4Addr::new(127, 0, 0, 1));
 
     println!("IP: {:?}", ip);
     println!("IP str: {:?}", ip.to_string());
+
+    let add = addr::NsSocketAddr::Inet(
+        addr::NsInetAddr::new(ip, 5000)
+    );
+
+    println!("Socket addr: {:?}", add);
 }
 
 /*
