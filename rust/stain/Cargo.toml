@@ -4,4 +4,5 @@ version = "0.1.0"
 authors = ["Neal Li <haiwei8086@gmail.com>"]
 
 [dependencies]
-libc = "0.2.8"
+errno = "*"
+libc = "0.2.10"

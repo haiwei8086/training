@@ -2,6 +2,7 @@ extern crate nest;
 
 use nest::net::{ip};
 
+
 fn main() {
     nest_test();
 
@@ -26,5 +27,8 @@ fn stain_test() {
 
     let addr = addr::InetAddr::new(ip, 5000);
     println!("addr v4: {:?}", addr.to_str());
+
+    stain::server::Server::new();
+    //stain::server::listen("127.0.0.1:3000");
 }
 */
