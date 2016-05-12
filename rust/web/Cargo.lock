@@ -2,19 +2,27 @@
 name = "web"
 version = "0.1.0"
 dependencies = [
- "libc 0.2.8 (registry+git://crates.mirrors.ustc.edu.cn/index)",
+ "libc 0.2.11 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nest 0.1.0",
  "stain 0.1.0",
 ]
 
 [[package]]
 name = "libc"
-version = "0.2.8"
-source = "registry+git://crates.mirrors.ustc.edu.cn/index"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "nest"
+version = "0.1.0"
+dependencies = [
+ "libc 0.2.11 (registry+https://github.com/rust-lang/crates.io-index)",
+]
 
 [[package]]
 name = "stain"
 version = "0.1.0"
 dependencies = [
- "libc 0.2.8 (registry+git://crates.mirrors.ustc.edu.cn/index)",
+ "libc 0.2.11 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
