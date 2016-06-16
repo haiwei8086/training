@@ -1,28 +1,49 @@
-extern crate nest;
+//extern crate nest;
 
-use nest::net::{ip, addr};
+mod signal;
 
+//use std::net;
+
+//use nest::net::*;
 
 fn main() {
-    nest_test();
+    // nest_test();
+    signal::run();
+
 
     println!("Hello, world!");
 }
 
+/*
 fn nest_test() {
     println!("Version: {:?}", nest::version());
 
-    let ip = ip::NsIpAddr::V4(ip::NsIpv4Addr::new(127, 0, 0, 1));
+    let ip = NsIpAddr::V4(NsIpv4Addr::new(127, 0, 0, 1));
 
     println!("IP: {:?}", ip);
     println!("IP str: {:?}", ip.to_string());
 
-    let add = addr::NsSocketAddr::Inet(
-        addr::NsInetAddr::new(ip, 5000)
-    );
+    let add = NsInetAddr::new(ip, 5000);
 
-    println!("Socket addr: {:?}", add);
+    let ns_addr = NsSocketAddr::Inet(NsInetAddr::new(ip, 5000));
+    let str_addr = NsSocketAddr::Inet(NsInetAddr::from_std(&"127.0.0.1:5000".parse::<net::SocketAddr>().unwrap()));
+
+    println!("Inet addr: {:?}", add);
+    println!("Net Socket addr: {:?}", ns_addr);
+    println!("Socket addr: {:?}", str_addr);
+
+    let fd = nest::net::socket(NsAddressFamily::Inet, NsSocketTypes::Stream, 0).unwrap();
+
+    println!("Socket Fd: {:?}", fd);
+
+    println!("Get Socket Fd: {:?}", get_flags(fd).unwrap());
+
+    set_nonblocking(fd).unwrap();
+
+    println!("Get Socket Fd: {:?}", get_flags(fd).unwrap());
+
 }
+*/
 
 /*
 fn stain_test() {

@@ -5,3 +5,8 @@ authors = ["Neal Li <haiwei8086@gmail.com>"]
 
 [dependencies]
 libc = "0.2.11"
+
+
+[[test]]
+name = "test"
+path = "test/test.rs"

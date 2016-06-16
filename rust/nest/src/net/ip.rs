@@ -24,6 +24,9 @@ impl fmt::Display for NsIpAddr {
 #[derive(Copy)]
 pub struct NsIpv4Addr(pub libc::in_addr);
 
+#[derive(Copy)]
+pub struct NsIpv6Addr(pub libc::in6_addr);
+
 
 impl NsIpv4Addr {
     pub fn new(a: u8, b: u8, c: u8, d: u8) -> NsIpv4Addr {
@@ -52,67 +55,6 @@ impl NsIpv4Addr {
         net::Ipv4Addr::new(bits[0], bits[1], bits[2], bits[3])
     }
 }
-
-impl PartialEq for NsIpv4Addr {
-    fn eq(&self, other: &NsIpv4Addr) -> bool {
-        self.0.s_addr == other.0.s_addr
-    }
-}
-
-impl Eq for NsIpv4Addr {}
-
-impl hash::Hash for NsIpv4Addr {
-    fn hash<H: hash::Hasher>(&self, s: &mut H) {
-        self.0.s_addr.hash(s)
-    }
-}
-
-impl PartialOrd for NsIpv4Addr {
-    fn partial_cmp(&self, other: &NsIpv4Addr) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for NsIpv4Addr {
-    fn cmp(&self, other: &NsIpv4Addr) -> Ordering {
-        self.octets().cmp(&other.octets())
-    }
-}
-
-impl Clone for NsIpv4Addr {
-    fn clone(&self) -> NsIpv4Addr { *self }
-}
-
-impl fmt::Display for NsIpv4Addr {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        let octets = self.octets();
-        write!(fmt, "{}.{}.{}.{}", octets[0], octets[1], octets[2], octets[3])
-    }
-}
-
-impl fmt::Debug for NsIpv4Addr {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(self, fmt)
-    }
-}
-
-impl From<NsIpv4Addr> for u32 {
-    fn from(ip: NsIpv4Addr) -> u32 {
-        let ip = ip.octets();
-        ((ip[0] as u32) << 24) + ((ip[1] as u32) << 16) + ((ip[2] as u32) << 8) + (ip[3] as u32)
-    }
-}
-
-impl From<u32> for NsIpv4Addr {
-    fn from(ip: u32) -> NsIpv4Addr {
-        NsIpv4Addr::new((ip >> 24) as u8, (ip >> 16) as u8, (ip >> 8) as u8, ip as u8)
-    }
-}
-
-
-#[derive(Copy)]
-pub struct NsIpv6Addr(pub libc::in6_addr);
-
 
 impl NsIpv6Addr {
     pub fn new(a: u16, b: u16, c: u16, d: u16, e: u16, f: u16, g: u16, h: u16) -> NsIpv6Addr {
@@ -153,46 +95,94 @@ impl NsIpv6Addr {
     }
 }
 
+impl PartialEq for NsIpv4Addr {
+    fn eq(&self, other: &NsIpv4Addr) -> bool {
+        self.0.s_addr == other.0.s_addr
+    }
+}
 impl PartialEq for NsIpv6Addr {
     fn eq(&self, other: &NsIpv6Addr) -> bool {
         self.0.s6_addr == other.0.s6_addr
     }
 }
 
+impl Eq for NsIpv4Addr {}
 impl Eq for NsIpv6Addr {}
 
+impl hash::Hash for NsIpv4Addr {
+    fn hash<H: hash::Hasher>(&self, s: &mut H) {
+        self.0.s_addr.hash(s)
+    }
+}
 impl hash::Hash for NsIpv6Addr {
     fn hash<H: hash::Hasher>(&self, s: &mut H) {
         self.0.s6_addr.hash(s)
     }
 }
 
+impl PartialOrd for NsIpv4Addr {
+    fn partial_cmp(&self, other: &NsIpv4Addr) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
 impl PartialOrd for NsIpv6Addr {
     fn partial_cmp(&self, other: &NsIpv6Addr) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
+impl Ord for NsIpv4Addr {
+    fn cmp(&self, other: &NsIpv4Addr) -> Ordering {
+        self.octets().cmp(&other.octets())
+    }
+}
 impl Ord for NsIpv6Addr {
     fn cmp(&self, other: &NsIpv6Addr) -> Ordering {
         self.segments().cmp(&other.segments())
     }
 }
 
+impl Clone for NsIpv4Addr {
+    fn clone(&self) -> NsIpv4Addr { *self }
+}
+impl Clone for NsIpv6Addr {
+    fn clone(&self) -> NsIpv6Addr { *self }
+}
+
+impl fmt::Display for NsIpv4Addr {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let octets = self.octets();
+        write!(fmt, "{}.{}.{}.{}", octets[0], octets[1], octets[2], octets[3])
+    }
+}
 impl fmt::Display for NsIpv6Addr {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         self.to_std().fmt(fmt)
     }
 }
 
+impl fmt::Debug for NsIpv4Addr {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, fmt)
+    }
+}
 impl fmt::Debug for NsIpv6Addr {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(self, fmt)
     }
 }
 
-impl Clone for NsIpv6Addr {
-    fn clone(&self) -> NsIpv6Addr { *self }
+impl From<NsIpv4Addr> for u32 {
+    fn from(ip: NsIpv4Addr) -> u32 {
+        let ip = ip.octets();
+        ((ip[0] as u32) << 24) + ((ip[1] as u32) << 16) + ((ip[2] as u32) << 8) + (ip[3] as u32)
+    }
+}
+
+impl From<u32> for NsIpv4Addr {
+    fn from(ip: u32) -> NsIpv4Addr {
+        NsIpv4Addr::new((ip >> 24) as u8, (ip >> 16) as u8, (ip >> 8) as u8, ip as u8)
+    }
 }
 
 impl From<[u8; 16]> for NsIpv6Addr {
