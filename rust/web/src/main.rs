@@ -1,6 +1,7 @@
 //extern crate nest;
 
-mod signal;
+//mod signal;
+mod atomic;
 
 //use std::net;
 
@@ -8,10 +9,8 @@ mod signal;
 
 fn main() {
     // nest_test();
-    signal::run();
-
-
-    println!("Hello, world!");
+    //signal::run();
+    atomic::run();
 }
 
 /*
