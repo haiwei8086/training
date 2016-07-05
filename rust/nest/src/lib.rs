@@ -17,17 +17,35 @@ pub use error::NsError;
 pub type NsResult<T> = std::result::Result<T, NsError>;
 
 
-pub fn init(config: &NsConfig) {
+pub struct Nest {
+    filters: Vec<T>
+}
 
-    for i in 0..2 {
-        // start worker
+
+impl Nest {
+
+    pub fn new() -> Nest {
+        Nest {
+            filters: Vec::new()
+        }
+    }
+
+    pub fn use(&self) -> &Nest{
+
+    }
+
+    pub fn listen(&self) -> NsResult<usize> {
 
     }
 }
 
-pub fn run() {
 
+pub fn new() -> Nest {
+    return Nest::new()
 }
+
+
+
 
 pub fn version() -> String {
     "0.1.0".to_string()
