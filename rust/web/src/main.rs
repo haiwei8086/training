@@ -1,7 +1,7 @@
-//extern crate nest;
+extern crate nest;
 
 //mod signal;
-mod atomic;
+//mod atomic;
 
 //use std::net;
 
@@ -10,7 +10,16 @@ mod atomic;
 fn main() {
     // nest_test();
     //signal::run();
-    atomic::run();
+    // atomic::run();
+    let mut config = nest::NsConfig::new();
+
+    let mut nest = nest::new(&mut config);
+    nest.modules(1);
+
+    match nest.listen() {
+        Ok(_) => println!("Listening on port: {}", 0),
+        _ => println!("Listen failed!"),
+    };
 }
 
 /*

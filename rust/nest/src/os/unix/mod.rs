@@ -1,13 +1,9 @@
-use libc;
-
-use super::{NsResult, NsError};
 
 
-pub fn fork() -> NsResult<i32> {
-    let pid = unsafe { libc::fork() };
-    if pid < 0 {
-        return Err(NsError::Unknow);
-    }
+pub mod consts;
 
-    Ok(pid)
+
+pub fn init()
+{
+    println!("Unix init");
 }
