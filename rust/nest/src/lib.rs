@@ -7,7 +7,8 @@ pub mod libc {
 }
 
 pub mod winapi {
-    extern crate winapi;    
+    extern crate winapi;
+    pub use self::winapi::*;
 }
 
 
