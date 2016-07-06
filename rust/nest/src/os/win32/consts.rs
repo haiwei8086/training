@@ -2,7 +2,7 @@
 
 #[cfg(target_os = "windows")]
 pub mod os {
-    use libc::{self, c_int, uint8_t};
+    use winapi::{self, c_int, uint8_t};
 
     pub const AF_UNSPEC: ::c_int = 0;
     pub const AF_UNIX: ::c_int = 1;

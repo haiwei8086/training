@@ -5,6 +5,7 @@ authors = ["Neal Li <haiwei8086@gmail.com>"]
 
 [dependencies]
 libc = "0.2.11"
+winapi = "0.2.7"
 
 
 [[test]]

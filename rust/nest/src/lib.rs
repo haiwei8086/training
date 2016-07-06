@@ -6,6 +6,10 @@ pub mod libc {
     pub use self::libc::*;
 }
 
+pub mod winapi {
+    extern crate winapi;    
+}
+
 
 mod error;
 mod config;
