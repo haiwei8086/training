@@ -1,3 +1,4 @@
+use libc;
 
 
 pub fn socket(domain: NsAddressFamily, ty: NsSocketTypes, protocol: i32) -> NsResult<RawFd> {
