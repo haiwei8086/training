@@ -1,7 +1,13 @@
+
+use std::os::raw::RawFd;
+
 use libc;
+use libc::c_int;
+use super::{NsResult, NsError, NsRawFd};
 
 
-pub fn socket(domain: NsAddressFamily, ty: NsSocketTypes, protocol: i32) -> NsResult<RawFd> {
+pub fn socket(domain: NsAddressFamily, ty: NsSocketTypes, protocol: i32) -> NsResult<NsRawFd>
+{
     let res = unsafe { libc::socket(domain as c_int, ty as c_int, protocol) };
 
     if res < 0 {
@@ -12,7 +18,8 @@ pub fn socket(domain: NsAddressFamily, ty: NsSocketTypes, protocol: i32) -> NsRe
     Ok(res)
 }
 
-pub fn socketpair(domain: NsAddressFamily, ty: NsSocketTypes, protocol: i32) -> NsResult<(RawFd, RawFd)> {
+pub fn socketpair(domain: NsAddressFamily, ty: NsSocketTypes, protocol: i32) -> NsResult<(NsRawFd, NsRawFd)>
+{
     let mut fds = [-1, -1];
     let res = unsafe { libc::socketpair(domain as c_int, ty as c_int, protocol, fds.as_mut_ptr()) };
 
@@ -25,7 +32,8 @@ pub fn socketpair(domain: NsAddressFamily, ty: NsSocketTypes, protocol: i32) -> 
 }
 
 
-pub fn bind(sockfd: RawFd, addr: &NsSocketAddr) -> NsResult<RawFd> {
+pub fn bind(sockfd: RawFd, addr: &NsSocketAddr) -> NsResult<NsRawFd>
+{
     let res = unsafe {
         let (ptr, len) = addr.as_ptr_len();
         libc::bind(sockfd, ptr, len)
@@ -38,7 +46,8 @@ pub fn bind(sockfd: RawFd, addr: &NsSocketAddr) -> NsResult<RawFd> {
     Ok(res)
 }
 
-pub fn listen(sockfd: RawFd, backlog: usize) -> NsResult<RawFd> {
+pub fn listen(sockfd: RawFd, backlog: usize) -> NsResult<NsRawFd>
+{
     let res = unsafe { libc::listen(sockfd, backlog as c_int) };
 
     if res < 0 {
