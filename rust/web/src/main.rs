@@ -5,12 +5,13 @@ extern crate nest;
 
 //use std::net;
 
-//use nest::net::*;
 
 fn main() {
     // nest_test();
     //signal::run();
     // atomic::run();
+
+
     let mut config = nest::NsConfig::new();
 
     let mut nest = nest::new(&mut config);

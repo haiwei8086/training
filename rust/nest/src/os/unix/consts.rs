@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
-pub mod os {
+pub mod ns_os {
     use libc::{self, c_int, uint8_t};
 
     pub const AF_UNIX: c_int  = 1;
@@ -98,10 +98,7 @@ pub mod os {
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
-pub mod os {
-    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
-    use libc::{self, c_int, uint8_t};
-    #[cfg(any(target_os = "openbsd", target_os = "netbsd"))]
+pub mod ns_os {
     use libc::{self, c_int, uint8_t};
 
     pub const AF_UNIX: c_int  = 1;

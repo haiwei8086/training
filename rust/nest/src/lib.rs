@@ -14,19 +14,20 @@ pub mod winapi {
 
 mod error;
 mod config;
-mod nest;
-
+mod core;
 mod os;
+mod traits;
 
-use nest::Nest;
 
-pub use config::NsConfig;
-pub use error::NsError;
+pub use self::config::NsConfig;
+pub use self::error::NsError;
+pub use self::core::Nest;
+
 pub type NsResult<T> = std::result::Result<T, NsError>;
+
 
 pub fn new(config: &mut NsConfig) -> Nest
 {
-    println!("{:?}", os::consts::AF_INET6);
     Nest::new(config)
 }
 

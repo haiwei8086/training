@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-#[cfg(any(target_os = "windows"))]
-pub mod os {
+#[cfg(target_os = "windows")]
+pub mod NsOS {
     use winapi::{c_int};
 
     pub const AF_UNSPEC: c_int = 0;
