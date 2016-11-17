@@ -1,4 +1,16 @@
-extern crate winapi;
+
+pub mod libc {
+    extern crate libc;
+    pub use self::libc::*;
+}
+
+pub mod winapi {
+    extern crate winapi;
+    pub use self::winapi::*;
+}
+
+pub mod consts;
+
 
 
 pub fn run() {
