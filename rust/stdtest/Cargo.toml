@@ -1,0 +1,6 @@
+[package]
+name = "stdtest"
+version = "0.1.0"
+authors = ["Haiwei Li <haiweili@unity3d.com>"]
+
+[dependencies]
