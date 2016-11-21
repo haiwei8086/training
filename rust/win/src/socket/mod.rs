@@ -1,6 +1,9 @@
+#![allow(dead_code)]
 
 mod consts;
 mod ffi;
+mod addr;
+mod process;
 
 #[repr(i32)]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
@@ -9,7 +12,6 @@ pub enum AddressFamily {
     Inet = consts::AF_INET,
     Inet6 = consts::AF_INET6,
 }
-
 
 #[repr(i32)]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
@@ -22,9 +24,6 @@ pub enum SockType {
 }
 
 
-
-
-pub fn init() {
-
-    println!("Win Socket bind to Localhost: 9090");
+pub fn run() {
+    process::Process::new();
 }

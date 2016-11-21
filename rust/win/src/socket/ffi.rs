@@ -1,19 +1,21 @@
+#![warn(non_camel_case_types)]
 
-use std::os::raw::{c_char, c_ushort, c_ulong};
+use std::os::raw::{c_int, c_char, c_ushort, c_ulong};
 
-type ADDRESS_FAMILY = c_ushort;
+pub type sa_family_t = c_ushort;
+pub type socklen_t = c_int;
 
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub struct SOCKADDR {
-    pub sa_family: ADDRESS_FAMILY,
+pub struct sockaddr {
+    pub sa_family: sa_family_t,
     pub sa_data: [c_char; 14],
 }
 
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct sockaddr_in {
-    pub sin_family: ADDRESS_FAMILY,
+    pub sin_family: sa_family_t,
     pub sin_port: c_ushort,
     pub sin_addr: in_addr,
     pub sin_zero: [c_char; 8],
@@ -23,7 +25,7 @@ pub struct sockaddr_in {
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct sockaddr_in6 {
-    pub sin6_family: ADDRESS_FAMILY,
+    pub sin6_family: sa_family_t,
     pub sin6_port: c_ushort,
     pub sin6_flowinfo: c_ulong,
     pub sin6_addr: in6_addr,

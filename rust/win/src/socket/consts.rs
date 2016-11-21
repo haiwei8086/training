@@ -1,6 +1,5 @@
-#![allow(dead_code)]
 
-use super::winapi::c_int;
+use winapi::c_int;
 
 pub const AF_UNSPEC: c_int = 0;
 pub const AF_UNIX: c_int = 1;
@@ -77,3 +76,6 @@ pub const SO_RANDOMIZE_PORT: c_int = 0x3005;
 pub const SO_PORT_SCALABILITY: c_int = 0x3006;
 pub const WSK_SO_BASE: c_int = 0x4000;
 pub const TCP_NODELAY: c_int = 0x0001;
+
+pub const IPPROTO_IP: c_int = 0;
+pub const WSA_FLAG_OVERLAPPED: u32 = 0x01;
