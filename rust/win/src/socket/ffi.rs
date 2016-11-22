@@ -1,4 +1,4 @@
-#![warn(non_camel_case_types)]
+#![allow(non_camel_case_types)]
 
 use std::os::raw::{c_int, c_char, c_ushort, c_ulong};
 
