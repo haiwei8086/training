@@ -5,6 +5,16 @@ use kernel32;
 use ws2_32;
 use super::{consts};
 
+
+extern "system" {
+    fn console_handler(ctrlType: u32) -> i32 {
+        println!("Ctrl Type: {}", ctrlType);
+
+        return 1;
+    }
+}
+
+
 pub struct Process {}
 
 impl Process {
@@ -15,6 +25,7 @@ impl Process {
 
         Process::info();
         Process::os_init();
+        Process::set_console_handler();
     }
 
     pub fn info() {
@@ -56,6 +67,22 @@ impl Process {
         /*
             TODO: get acceptx fn pointer
         */
+    }
+
+    pub fn daemon() {
+        println!("Run in daemon --------------------------------", );
+
+        match unsafe { kernel32::FreeConsole() } {
+                0 => println!("Free console failed!"),
+                _ => println!("successed no print, Free console"),
+        }
+    }
+
+    pub fn set_console_handler() {
+        match unsafe { kernel32::SetConsoleCtrlHandler(Some(Process::console_handler), 1) } {
+            0 => println!("Set Console Ctrl Handler failed!"),
+            _ => println!("Set Console Ctrl Handler done"),
+        }
     }
 
 }
