@@ -4,16 +4,21 @@ use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 
 use winapi;
+use winapi::processthreadsapi::{PROCESS_INFORMATION, STARTUPINFOW};
+use winapi::shlobj::INVALID_HANDLE_VALUE;
+use winapi::winbase::CREATE_NO_WINDOW;
 use kernel32;
 use ws2_32;
-use super::{console_handler};
+use super::console_handler;
 
 
+static mut is_worker: bool = false;
 
-pub struct Process {}
+pub struct Process {
+    is_worker: bool,
+}
 
 impl Process {
-
     pub fn new() {
         let pid = unsafe { kernel32::GetCurrentProcessId() };
         println!("Process new, PID: {}", pid);
@@ -25,7 +30,7 @@ impl Process {
         Process::create_process();
 
         // loop input
-        /*
+
         let mut input = String::new();
         loop {
             io::stdin()
@@ -37,16 +42,23 @@ impl Process {
                 _ => println!("You input: {}", input),
             }
         }
-        */
+
     }
 
     pub fn info() {
         println!("Process infos ----------------------------");
-        println!("Current directory: {}", std::env::current_dir().unwrap().display());
+        println!("Current directory: {}",
+                 std::env::current_dir().unwrap().display());
         println!("Current exe: {:?}", std::env::current_exe());
 
         for argument in std::env::args() {
             println!("Arguments item: {}", argument);
+            if argument.trim() == "--worker" {
+                unsafe {
+                    is_worker = true;
+                }
+                println!("This is a worker thread");
+            }
         }
 
         println!("OS Version: {:?}", unsafe { kernel32::GetVersion() });
@@ -65,7 +77,7 @@ impl Process {
         let mut wsa_data: winapi::winsock2::WSADATA;
         let ret = unsafe {
             wsa_data = mem::zeroed();
-             ws2_32::WSAStartup(0x202, &mut wsa_data)
+            ws2_32::WSAStartup(0x202, &mut wsa_data)
         };
 
         match ret {
@@ -76,17 +88,16 @@ impl Process {
         unsafe { ws2_32::WSACleanup() };
 
 
-        /*
-            TODO: get acceptx fn pointer
-        */
+        // TODO: get acceptx fn pointer
+        //
     }
 
     pub fn daemon() {
         println!("Run in daemon --------------------------------", );
 
         match unsafe { kernel32::FreeConsole() } {
-                0 => println!("Free console failed!"),
-                _ => println!("successed no print, Free console"),
+            0 => println!("Free console failed!"),
+            _ => println!("successed no print, Free console"),
         }
     }
 
@@ -97,8 +108,8 @@ impl Process {
         }
     }
 
-    pub fn to_wchar(str : &str) -> *const u16 {
-        let v : Vec<u16> = OsStr::new(str).encode_wide().chain(Some(0).into_iter()).collect();
+    pub fn to_wchar(str: &str) -> *const u16 {
+        let v: Vec<u16> = OsStr::new(str).encode_wide().chain(Some(0).into_iter()).collect();
 
         v.as_ptr()
     }
@@ -124,7 +135,8 @@ impl Process {
         }
 
         let reopen_event_name = Process::to_wchar("quit_event");
-        let reopen_event = unsafe { kernel32::CreateEventW(ptr::null_mut(), 1, 0, reopen_event_name) };
+        let reopen_event =
+            unsafe { kernel32::CreateEventW(ptr::null_mut(), 1, 0, reopen_event_name) };
         if reopen_event.is_null() {
             println!("Create reopen_event failed!");
         } else {
@@ -132,7 +144,8 @@ impl Process {
         }
 
         let reload_event_name = Process::to_wchar("quit_event");
-        let reload_event = unsafe { kernel32::CreateEventW(ptr::null_mut(), 1, 0, reload_event_name) };
+        let reload_event =
+            unsafe { kernel32::CreateEventW(ptr::null_mut(), 1, 0, reload_event_name) };
         if reload_event.is_null() {
             println!("Create reload_event failed!");
         } else {
@@ -147,48 +160,81 @@ impl Process {
         }
     }
 
+
+    pub fn zeroed_process_information() -> PROCESS_INFORMATION {
+        PROCESS_INFORMATION {
+            hProcess: ptr::null_mut(),
+            hThread: ptr::null_mut(),
+            dwProcessId: 0,
+            dwThreadId: 0,
+        }
+    }
+
+    pub fn zeroed_startupinfo() -> STARTUPINFOW {
+        STARTUPINFOW {
+            cb: 0,
+            lpReserved: ptr::null_mut(),
+            lpDesktop: ptr::null_mut(),
+            lpTitle: ptr::null_mut(),
+            dwX: 0,
+            dwY: 0,
+            dwXSize: 0,
+            dwYSize: 0,
+            dwXCountChars: 0,
+            dwYCountChars: 0,
+            dwFillAttribute: 0,
+            dwFlags: 0,
+            wShowWindow: 0,
+            cbReserved2: 0,
+            lpReserved2: ptr::null_mut(),
+            hStdInput: INVALID_HANDLE_VALUE,
+            hStdOutput: INVALID_HANDLE_VALUE,
+            hStdError: INVALID_HANDLE_VALUE,
+        }
+    }
+
     pub fn create_process() {
+        if unsafe { is_worker } {
+            return;
+        }
+
         println!("Create process ---------------------------------");
+        println!("Program path: {:?}", std::env::current_exe().unwrap());
+
+        let program = Process::to_wchar(std::env::current_exe().unwrap().to_str().unwrap());
+        let args = Process::to_wchar(" --worker");
 
         for x in 0..2 {
             println!("Process: {:?}", x);
+            let mut statu_info = Process::zeroed_startupinfo();
+            let mut process_info = Process::zeroed_process_information();
 
+            let ret = unsafe {
+                kernel32::CreateProcessW(program as *const u16,
+                                         args as *mut u16,
+                                         ptr::null_mut(),
+                                         ptr::null_mut(),
+                                         0,
+                                         CREATE_NO_WINDOW,
+                                         ptr::null_mut(),
+                                         ptr::null_mut(),
+                                         &mut statu_info,
+                                         &mut process_info)
+            };
 
-            let mut program = std::env::current_exe().unwrap();
-            println!("Program path: {:?}", program);
-
-            let mut statu_info: winapi::processthreadsapi::STARTUPINFOW;
-            let mut process_info: winapi::processthreadsapi::PROCESS_INFORMATION;
-
-            unsafe {
-                statu_info = mem::zeroed::<winapi::processthreadsapi::STARTUPINFOW>();
-                process_info = mem::zeroed::<winapi::processthreadsapi::PROCESS_INFORMATION>();
-
-                let mut path = Process::to_wchar(program.to_str().unwrap()) as *mut u16;
-
-                match kernel32::CreateProcessW(
-                    ptr::null_mut(),
-                    path,
-                    ptr::null_mut(),
-                    ptr::null_mut(),
-                    0,
-                    winapi::winbase::CREATE_NO_WINDOW,
-                    ptr::null_mut(),
-                    ptr::null_mut(),
-                    &mut statu_info,
-                    &mut process_info) {
-                        0 => {
-                            println!("Create process failed!");
-                            println!("Status info: {:?}", &statu_info);
-                            println!("Process info: {:?}", &process_info);
-                        },
-                        _ => {
-                            kernel32::CloseHandle(process_info.hProcess);
-                            kernel32::CloseHandle(process_info.hThread);
-                        },
+            match ret {
+                0 => {
+                    println!("Create process failed!");
+                    println!("Status info: {:?}", &statu_info);
+                    println!("Process info: {:?}", &process_info);
+                }
+                _ => {
+                    unsafe {
+                        // kernel32::CloseHandle(process_info.hProcess);
+                        kernel32::CloseHandle(process_info.hThread);
+                    }
                 }
             }
         }
     }
-
 }
