@@ -4,12 +4,50 @@ use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 
 use winapi;
+use winapi::c_void;
 use winapi::processthreadsapi::{PROCESS_INFORMATION, STARTUPINFOW};
 use winapi::shlobj::INVALID_HANDLE_VALUE;
 use winapi::winbase::CREATE_NO_WINDOW;
+use winapi::winsock2::INVALID_SOCKET;
+use winapi::winsock2::SOCKET;
+use winapi::minwindef::LPVOID;
+use winapi::minwindef::LPDWORD;
+use winapi::minwinbase::OVERLAPPED;
+use winapi::winsock2::LPWSAOVERLAPPED;
+use winapi::winsock2::LPWSAOVERLAPPED_COMPLETION_ROUTINE;
+use winapi::ws2def::SIO_GET_EXTENSION_FUNCTION_POINTER;
+use winapi::guiddef::GUID;
+use winapi::winnt::PVOID;
 use kernel32;
 use ws2_32;
-use super::console_handler;
+
+use super::{consts, AddressFamily, SockType, console_handler};
+
+extern "system" {
+
+    pub fn WSAIoctl(
+        s: SOCKET,
+        dwIoControlCode: u32,
+        lpvInBuffer: LPVOID,
+        cbInBuffer: u32,
+        lpvOutBuffer: LPVOID,
+        cbOutBuffer: u32,
+        lpcbBytesReturned: LPDWORD,
+        lpOverlapped: LPVOID,
+        lpCompletionRoutine: LPVOID,
+    ) -> i32;
+
+    pub fn LPFN_ACCEPTEX(
+        sListenSocket: SOCKET,
+        sAcceptSocket: SOCKET,
+        lpOutputBuffer: PVOID,
+        dwReceiveDataLength: u32,
+        dwLocalAddressLength: u32,
+        dwRemoteAddressLength: u32,
+        lpdwBytesReceived: *mut u32,
+        lpOverlapped: *mut OVERLAPPED,
+    ) -> bool;
+}
 
 
 static mut is_worker: bool = false;
@@ -27,7 +65,7 @@ impl Process {
         Process::os_init();
         Process::set_console_handler();
         Process::create_signal_events();
-        Process::create_process();
+        // Process::create_process();
 
         // loop input
 
@@ -85,6 +123,72 @@ impl Process {
             _ => println!("Init Winsock successed: {}", ret),
         }
 
+        let socket_fd = unsafe {
+            ws2_32::WSASocketW(
+                AddressFamily::Inet as i32,
+                SockType::Stream as i32,
+                consts::IPPROTO_IP,
+                ptr::null_mut(),
+                0,
+                consts::WSA_FLAG_OVERLAPPED)
+        };
+
+        match socket_fd {
+            INVALID_SOCKET => println!("Create socket failed!"),
+            _ => println!("Socket created"),
+        }
+
+
+        let mut WSAID_ACCEPTEX = GUID {
+            Data1: 0xb5367df1,
+            Data2: 0xcbac,
+            Data3: 0x11cf,
+            Data4: [0x95,0xca,0x00,0x80,0x5f,0x48,0xa1,0x92],
+        };
+
+        let mut byte_len: u32 = 0;
+        let mut accept_fn = LPFN_ACCEPTEX;
+        let mut over_lapped: OVERLAPPED;
+
+        let ret = unsafe {
+            over_lapped = mem::zeroed::<OVERLAPPED>();
+
+            println!("WSAIoctl socket_fd: {:?}", socket_fd);
+            println!("WSAIoctl dwIoControlCode: {:?}", SIO_GET_EXTENSION_FUNCTION_POINTER);
+            println!("WSAIoctl lpvInBuffer: {:?}", &mut WSAID_ACCEPTEX as *mut _ as *mut c_void);
+            println!("WSAIoctl cbInBuffer: {:?}", mem::size_of::<GUID>() as u32);
+            println!("WSAIoctl lpvOutBuffer: {:?}", &mut accept_fn as *mut _ as *mut c_void);
+            println!("WSAIoctl cbOutBuffer: {:?}", mem::size_of::<LPVOID>() as u32);
+            println!("WSAIoctl lpcbBytesReturned: {:?}", &mut byte_len);
+            println!("WSAIoctl lpOverlapped: {:?}", &mut over_lapped);
+            //println!("WSAIoctl lpCompletionRoutine: {:?}", ptr::null());
+
+            WSAIoctl(
+                socket_fd,
+                SIO_GET_EXTENSION_FUNCTION_POINTER,
+                &mut WSAID_ACCEPTEX as *mut _ as *mut c_void,
+                mem::size_of::<GUID>() as u32,
+                &mut accept_fn as *mut _ as *mut c_void,
+                mem::size_of::<LPVOID>() as u32,
+                &mut byte_len,
+                ptr::null_mut(),
+                ptr::null_mut()
+            )
+        };
+
+
+
+        match ret {
+            -1 => println!("Get AcceptEx fn failed"),
+            _ => println!("Get AcceptEx fn: {:?}", ret),
+        }
+
+
+        match unsafe { ws2_32::closesocket(socket_fd) } {
+            -1 => println!("Close socket failed!"),
+            _ => println!("Socket closed"),
+
+        }
         unsafe { ws2_32::WSACleanup() };
 
 
