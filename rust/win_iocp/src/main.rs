@@ -46,7 +46,9 @@ fn main() {
     println!("Context PID: {}", ctx.pid);
 
 
-    os::init();
+    os::init(&mut ctx);
+
+    println!("Context arguments: {:?}", ctx.argument_map);
 
     process::master_process_cycle(&mut ctx);
 

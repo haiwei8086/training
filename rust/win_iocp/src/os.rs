@@ -26,17 +26,18 @@ use winapi::um::processthreadsapi::GetCurrentProcessId;
 
 use super::consts;
 use super::ffi;
+use super::context::Context;
 
 
 
-pub fn init() {
-    system_info();
+pub fn init(ctx: &mut Context) {
+    system_info(ctx);
 
     init_winsock();
 }
 
 
-fn system_info() {
+fn system_info(ctx: &mut Context) {
     println!("-------------------------------------");
     println!("OS info:");
 
@@ -76,6 +77,11 @@ fn system_info() {
     //println!("dwProcessorType: {:?}", sys_info.dwProcessorType);    
     println!("Processor Level: {:?}", sys_info.wProcessorLevel);
     println!("Processor Revision: {:?}", sys_info.wProcessorRevision);
+
+
+    ctx.cpus = sys_info.dwNumberOfProcessors as u8;
+    ctx.memery_page_size = sys_info.dwPageSize as u32;
+    ctx.allocation_granularity = sys_info.dwAllocationGranularity as u32;
 
 
     let mut mem_status: MEMORYSTATUS;
