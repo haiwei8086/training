@@ -35,9 +35,6 @@ fn main() {
 
     assert_eq!(InetAddr::from(std_addr), inet_addr);
     assert_eq!(std_addr, net::SocketAddr::from(inet_addr));
-
-    println!("std addr: {}", std_addr);
-    println!("inet_addr: {}", inet_addr);
     println!("from std addr: {}", InetAddr::from(std_addr));
 
 
@@ -47,8 +44,24 @@ fn main() {
 
 
     os::init(&mut ctx);
+    println!("Context arguments: {:?}", ctx.arguments);
 
-    println!("Context arguments: {:?}", ctx.argument_map);
+
+    if ctx.arguments.contains_key("-s") {
+
+        if let Some(val) = ctx.arguments.get("-s") {
+
+            process::signal_process(&ctx, val);
+            return;
+        }
+    }
+
+    
+    os::save_pid(&ctx);
+
+    let pid = os::read_pid(&ctx).unwrap();
+    println!("Read pid: {}", pid);
+
 
     process::master_process_cycle(&mut ctx);
 

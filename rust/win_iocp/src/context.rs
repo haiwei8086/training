@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use std::{ptr, env, process};
+use std::{ptr, env, path, process};
 use std::collections::{BTreeMap};
 
 use winapi::um::winnt::{HANDLE};
@@ -12,6 +12,7 @@ use winapi::um::handleapi::CloseHandle;
 
 pub struct SignalEvent {
     pub name: &'static str,
+    pub path_format: &'static str,
     pub path: String,
     pub handle: HANDLE,
 }
@@ -23,8 +24,10 @@ pub struct Context {
     pub cpus: u8,
     pub memery_page_size: u32,
     pub allocation_granularity: u32,
+    pub pid_file_name: &'static str,
+    pub pid_path: path::PathBuf,
 
-    pub argument_map: BTreeMap<String, String>,
+    pub arguments: BTreeMap<String, String>,
 
     pub events: Vec<SignalEvent>,
 
@@ -35,13 +38,17 @@ pub struct Context {
 impl<'a> Context {
 
     pub fn new() -> Self {
+        
         let mut ctx = Context {
             pid: process::id(),
             cpus: 2,
             memery_page_size: 4096,
             allocation_granularity: 65536,
 
-            argument_map: BTreeMap::new(),
+            pid_file_name: "pid.lock",
+            pid_path: env::current_dir().unwrap(),
+
+            arguments: BTreeMap::new(),
             events: Vec::new(), 
         };
         
@@ -55,33 +62,23 @@ impl<'a> Context {
 
 
     pub fn init_args(&mut self) {
-        let args = env::args();
+        let args: Vec<String> = env::args().collect();
+        let len = args.len();
         
-        let mut i = 0;
-        let mut key_list: Vec<String> = Vec::new();
-        let mut val_list: Vec<String> = Vec::new();
-
-        for arg in args {
-            if i > 0 {
-                if i%2 == 0 {
-                    val_list.push(arg);
-                } else {
-                    key_list.push(arg);
-                }
-            }
-
+        
+        let mut key: &String;
+        let mut val: &String = &String::new();
+        let mut i = 1;
+        
+        while i < len {
+            key = &args[i];
             i += 1;
-        }
 
-        i = 0;
-        let v_len = val_list.len();
-
-        for k in key_list {
-            if i < v_len {
-                self.argument_map.insert(k, val_list[i].to_owned());
-            } else {
-                self.argument_map.insert(k, "".to_string());
+            if i < len {
+                val = &args[i];
             }
+
+            self.arguments.insert(key.to_owned(), val.to_owned());
 
             i += 1;
         }
@@ -91,21 +88,25 @@ impl<'a> Context {
     pub fn init_events(&mut self) {
         self.events.push(SignalEvent {
             name: "stop",
+            path_format: "Global\\stop_event_{}",
             path: format!("Global\\stop_event_{}", self.pid),
             handle: ptr::null_mut(),
         });
         self.events.push(SignalEvent {
             name: "quit",
+            path_format: "Global\\quit_event_{}",
             path: format!("Global\\quit_event_{}", self.pid),
             handle: ptr::null_mut(),
         });
         self.events.push(SignalEvent {
             name: "reopen",
+            path_format: "Global\\reopen_event_{}",
             path: format!("Global\\reopen_event_{}", self.pid),
             handle: ptr::null_mut(),
         });
         self.events.push(SignalEvent {
             name: "reload",
+            path_format: "Global\\reload_event_{}",
             path: format!("Global\\reload_event_{}", self.pid),
             handle: ptr::null_mut(),
         });

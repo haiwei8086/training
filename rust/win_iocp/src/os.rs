@@ -1,6 +1,9 @@
-use std::{env, mem, ptr};
+use std::{env, path, fs, mem, ptr};
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
+use std::io::prelude::*;
+use std::str::FromStr;
+
 
 use winapi::ctypes::c_void;
 use winapi::um::sysinfoapi::SYSTEM_INFO;
@@ -269,4 +272,33 @@ pub fn convert_to_wchar(str: &str) -> *const u16 {
     let v: Vec<u16> = OsStr::new(str).encode_wide().chain(Some(0).into_iter()).collect();
 
     v.as_ptr()
+}
+
+
+pub fn save_pid(ctx: &Context) {
+
+    let mut pid_dir = path::PathBuf::new();
+    pid_dir.push(ctx.pid_path.as_path());
+    pid_dir.push(ctx.pid_file_name);
+
+    let mut file = fs::File::create(pid_dir.as_path()).unwrap();
+    file.write_all((format!("{}", ctx.pid)).as_bytes()).unwrap();
+
+    println!("Save pid file to {}", pid_dir.display());
+}
+
+pub fn read_pid(ctx: &Context) -> std::io::Result<u32> {
+    let mut pid_dir = path::PathBuf::new();
+    pid_dir.push(ctx.pid_path.as_path());
+    pid_dir.push(ctx.pid_file_name);
+
+    let mut file = fs::File::open(pid_dir.as_path())?;
+
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    
+    println!("read_pid read content: {}", contents);
+
+
+    Ok(u32::from_str(&*contents).unwrap())
 }

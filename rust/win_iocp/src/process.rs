@@ -2,6 +2,8 @@
 #![allow(unused_imports)]
 
 use std::{ptr};
+use std::io::Error;
+
 
 use winapi::um::winbase::{INFINITE, WAIT_OBJECT_0, WAIT_FAILED};
 use winapi::um::wincon::{
@@ -11,7 +13,7 @@ use winapi::um::wincon::{
     CTRL_LOGOFF_EVENT, 
     CTRL_SHUTDOWN_EVENT
 };
-use winapi::um::winnt::{LPCWSTR, HANDLE};
+use winapi::um::winnt::{LPCWSTR, HANDLE, EVENT_MODIFY_STATE};
 use winapi::shared::minwindef::DWORD;
 use winapi::shared::winerror::WAIT_TIMEOUT;
 
@@ -25,12 +27,14 @@ use winapi::um::synchapi::{
     WaitForSingleObject,
     ReleaseMutex,
     ResetEvent,
+    OpenEventW as OpenEvent,
+    SetEvent,
 };
 use winapi::um::handleapi::CloseHandle;
 use winapi::um::processthreadsapi::GetCurrentProcessId;
 
 
-use super::os::{convert_to_wchar};
+use super::os::{self, convert_to_wchar};
 use super::context::{SignalEvent, Context};
 
 
@@ -83,6 +87,31 @@ pub fn create_signal_events(events: &mut Vec<SignalEvent>) {
     }
 }
 
+pub fn signal_process(ctx: &Context, signal: &str) {
+    
+    if let Some(_event) = ctx.events.iter().find(|&e| e.name == signal) {
+        
+        let pid = os::read_pid(&ctx).unwrap();
+        let event_path = _event.path_format.replace("{}", &pid.to_string());
+
+
+        let ev = unsafe { OpenEvent(EVENT_MODIFY_STATE, 0, convert_to_wchar(event_path.as_str())) };
+        if ev.is_null() {
+            println!("OpenEvent({}) failed! error: {:?}", event_path, Error::last_os_error());
+            return;
+        }
+
+
+        let ret = unsafe { SetEvent(ev) };
+        if ret == 0 {
+            println!("SetEvent({:?}) failed!", ev);
+            return;
+        }
+
+
+        unsafe { CloseHandle(ev) };
+    }
+}
 
 pub fn master_process_cycle(ctx: &mut Context) {
     println!("master_process_cycle");
@@ -92,15 +121,18 @@ pub fn master_process_cycle(ctx: &mut Context) {
     for event in &mut ctx.events {
         println!("Signal event: {:?} {}", event.handle, event.path);
 
+        /*
         let ret = unsafe { CloseHandle(event.handle) };
         println!("CloseHandle ret: {:?}", ret);
 
+
         event.handle = ptr::null_mut();
+        */
     }
 
 
-    let master_process_event_name = convert_to_wchar((format!("master_event_{}", ctx.pid)).as_str());
-    let master_process_event = unsafe { CreateEvent(ptr::null_mut(), 1, 0, master_process_event_name) };
+    let master_process_event_name = format!("master_event_{}", ctx.pid);
+    let master_process_event = unsafe { CreateEvent(ptr::null_mut(), 1, 0, convert_to_wchar(master_process_event_name.as_str())) };
     if master_process_event.is_null() {
         println!("Create master_process_event failed!");
     } else {
@@ -118,10 +150,15 @@ pub fn master_process_cycle(ctx: &mut Context) {
     }
 
 
+    let mut failed_count = 0;
     let mut ev: DWORD;
 
     loop {
         println!("master_process_cycle loop...");
+
+        if failed_count > 5 {
+            break;
+        }
 
         ev = unsafe {
             WaitForMultipleObjects(events.len() as DWORD, events.as_ptr(), 0, INFINITE)
@@ -134,15 +171,13 @@ pub fn master_process_cycle(ctx: &mut Context) {
         if ev == WAIT_OBJECT_0 {
             println!("exiting by stop_event.");
 
-            master_process_exit();
-            break;
+            break master_process_exit()
         } 
 
         if ev == WAIT_OBJECT_0 + 1 {
             println!("shutting down by quit_event.");
 
-            master_process_exit();
-            break;
+            break master_process_exit()
         } 
 
         if ev == WAIT_OBJECT_0 + 2 {
@@ -170,23 +205,23 @@ pub fn master_process_cycle(ctx: &mut Context) {
         if ev > WAIT_OBJECT_0 + 3 && ev < WAIT_OBJECT_0 + events.len() as u32 {
             println!("reap worker");
 
-            master_process_exit();
-            break;
+            break master_process_exit()
         } 
 
         if ev == WAIT_TIMEOUT {
             println!("timeout");
 
-            master_process_exit();
-            break;
+            break master_process_exit()
         } 
 
 
         if ev == WAIT_FAILED {
-            println!("master WaitForMultipleObjects failed.");
+            println!("master WaitForMultipleObjects failed. reason: {:?}", Error::last_os_error());
 
-            // continue;
-            break master_process_exit()
+            failed_count += 1;
+
+            continue;
+            //break master_process_exit()
         }
     }
 }
