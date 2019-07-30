@@ -122,6 +122,7 @@ impl Drop for Context {
         for event in &self.events {
             if !event.handle.is_null() {
                 println!("CloseHandle: {:?} {}", event.handle, event.path);
+                
                 unsafe { CloseHandle(event.handle) };
             }
         }

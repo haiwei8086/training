@@ -3,6 +3,8 @@
 
 use std::{ptr};
 use std::io::Error;
+use std::ffi::{OsString, OsStr};
+use std::os::windows::prelude::*;
 
 
 use winapi::um::winbase::{INFINITE, WAIT_OBJECT_0, WAIT_FAILED};
@@ -14,27 +16,29 @@ use winapi::um::wincon::{
     CTRL_SHUTDOWN_EVENT
 };
 use winapi::um::winnt::{LPCWSTR, HANDLE, EVENT_MODIFY_STATE};
-use winapi::shared::minwindef::DWORD;
+use winapi::shared::minwindef::{DWORD};
 use winapi::shared::winerror::WAIT_TIMEOUT;
 
 
 use winapi::um::consoleapi::SetConsoleCtrlHandler;
 use winapi::um::wincon::FreeConsole;
-use winapi::um::synchapi::{
-    CreateEventW as CreateEvent, 
+use winapi::um::synchapi::{    
     CreateMutexW as CreateMutex,
-    WaitForMultipleObjects,
-    WaitForSingleObject,
     ReleaseMutex,
-    ResetEvent,
+
+    WaitForMultipleObjects,
+    WaitForSingleObject,    
+    
+    CreateEventW as CreateEvent, 
     OpenEventW as OpenEvent,
     SetEvent,
+    ResetEvent,
 };
 use winapi::um::handleapi::CloseHandle;
 use winapi::um::processthreadsapi::GetCurrentProcessId;
 
 
-use super::os::{self, convert_to_wchar};
+use super::os::{self, to_wchar};
 use super::context::{SignalEvent, Context};
 
 
@@ -75,7 +79,8 @@ pub fn free_console() {
 pub fn create_signal_events(events: &mut Vec<SignalEvent>) {
 
     for event in events {
-        let ev = unsafe { CreateEvent(ptr::null_mut(), 1, 0, convert_to_wchar(event.path.as_str())) };
+        let mut lp_name: Vec<u16> = to_wchar(event.path.as_str());
+        let ev = unsafe { CreateEvent(ptr::null_mut(), 1, 0, lp_name.as_mut_ptr()) };
 
         if ev.is_null() {
             println!("CreateEvent({}) failed!", event.path);
@@ -92,10 +97,12 @@ pub fn signal_process(ctx: &Context, signal: &str) {
     if let Some(_event) = ctx.events.iter().find(|&e| e.name == signal) {
         
         let pid = os::read_pid(&ctx).unwrap();
+
         let event_path = _event.path_format.replace("{}", &pid.to_string());
+        let mut lp_name: Vec<u16> = to_wchar(event_path.as_str());
 
 
-        let ev = unsafe { OpenEvent(EVENT_MODIFY_STATE, 0, convert_to_wchar(event_path.as_str())) };
+        let ev = unsafe { OpenEvent(EVENT_MODIFY_STATE, 0, lp_name.as_mut_ptr()) };
         if ev.is_null() {
             println!("OpenEvent({}) failed! error: {:?}", event_path, Error::last_os_error());
             return;
@@ -130,9 +137,8 @@ pub fn master_process_cycle(ctx: &mut Context) {
         */
     }
 
-
-    let master_process_event_name = format!("master_event_{}", ctx.pid);
-    let master_process_event = unsafe { CreateEvent(ptr::null_mut(), 1, 0, convert_to_wchar(master_process_event_name.as_str())) };
+    let mut master_process_event_name: Vec<u16> = to_wchar(format!("master_event_{}", ctx.pid).as_str());
+    let master_process_event = unsafe { CreateEvent(ptr::null_mut(), 1, 0, master_process_event_name.as_mut_ptr()) };
     if master_process_event.is_null() {
         println!("Create master_process_event failed!");
     } else {
