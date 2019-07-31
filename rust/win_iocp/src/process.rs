@@ -93,27 +93,30 @@ pub fn create_signal_events(events: &mut Vec<SignalEvent>) {
 }
 
 pub fn signal_process(ctx: &Context, signal: &str) {
-    
+
     if let Some(_event) = ctx.events.iter().find(|&e| e.name == signal) {
-        
+        println!("[signal_process] Find event: {}", _event.name);
+
         let pid = os::read_pid(&ctx).unwrap();
 
         let event_path = _event.path_format.replace("{}", &pid.to_string());
         let mut lp_name: Vec<u16> = to_wchar(event_path.as_str());
 
-
         let ev = unsafe { OpenEvent(EVENT_MODIFY_STATE, 0, lp_name.as_mut_ptr()) };
         if ev.is_null() {
-            println!("OpenEvent({}) failed! error: {:?}", event_path, Error::last_os_error());
+            println!("[signal_process] OpenEvent({}) failed! error: {:?}", event_path, Error::last_os_error());
             return;
         }
+    
+        println!("[signal_process] OpenEvent {}", event_path);
 
 
         let ret = unsafe { SetEvent(ev) };
         if ret == 0 {
-            println!("SetEvent({:?}) failed!", ev);
+            println!("[signal_process] SetEvent({:?}) failed!", ev);
             return;
         }
+        println!("[signal_process] SetEvent {}", event_path);
 
 
         unsafe { CloseHandle(ev) };
