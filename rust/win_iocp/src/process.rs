@@ -6,7 +6,6 @@ use std::io::Error;
 use std::ffi::{OsString, OsStr};
 use std::os::windows::prelude::*;
 
-
 use winapi::um::winbase::{INFINITE, WAIT_OBJECT_0, WAIT_FAILED};
 use winapi::um::wincon::{
     CTRL_C_EVENT, 
@@ -18,7 +17,6 @@ use winapi::um::wincon::{
 use winapi::um::winnt::{LPCWSTR, HANDLE, EVENT_MODIFY_STATE};
 use winapi::shared::minwindef::{DWORD};
 use winapi::shared::winerror::WAIT_TIMEOUT;
-
 
 use winapi::um::consoleapi::SetConsoleCtrlHandler;
 use winapi::um::wincon::FreeConsole;
@@ -36,7 +34,6 @@ use winapi::um::synchapi::{
 };
 use winapi::um::handleapi::CloseHandle;
 use winapi::um::processthreadsapi::GetCurrentProcessId;
-
 
 use super::os::{self, to_wchar};
 use super::context::{SignalEvent, Context};
@@ -68,6 +65,7 @@ pub unsafe extern "system" fn console_handler(ctrl_type: u32) -> i32 {
     return 1;
 }
 
+
 pub fn free_console() {
     match unsafe { FreeConsole() } {
         0 => println!("Free console failed!"),
@@ -91,6 +89,7 @@ pub fn create_signal_events(events: &mut Vec<SignalEvent>) {
         }
     }
 }
+
 
 pub fn signal_process(ctx: &Context, signal: &str) {
 
@@ -123,8 +122,9 @@ pub fn signal_process(ctx: &Context, signal: &str) {
     }
 }
 
+
 pub fn master_process_cycle(ctx: &mut Context) {
-    println!("master_process_cycle");
+    println!("[master_process_cycle]");
 
 
     create_signal_events(&mut ctx.events);
@@ -232,6 +232,27 @@ pub fn master_process_cycle(ctx: &mut Context) {
             continue;
             //break master_process_exit()
         }
+    }
+}
+
+
+pub fn single_process_cycle(ctx: &mut Context) {
+    println!("[single_process_cycle]");
+
+
+    create_signal_events(&mut ctx.events);
+    // TODO
+    for event in &mut ctx.events {
+        println!("[single_process_cycle] Signal event: {:?} {}", event.handle, event.path);
+    }
+
+
+    if let Some(_event) = ctx.events.iter().find(|&e| e.name == "stop") {
+        println!("[signal_process] WaitForSingleObject {}", _event.name);
+
+        unsafe {
+            WaitForSingleObject(_event.handle, INFINITE)
+        };
     }
 }
 

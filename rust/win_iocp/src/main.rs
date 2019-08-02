@@ -12,6 +12,7 @@ mod sock_addr;
 mod os;
 mod context;
 mod process;
+mod socket;
 
 
 use ip::IPAddrV4;
@@ -63,6 +64,7 @@ fn main() {
     println!("Read pid: {}", pid);
 
 
-    process::master_process_cycle(&mut ctx);
+    process::single_process_cycle(&mut ctx);
+    //process::master_process_cycle(&mut ctx);
 
 }
