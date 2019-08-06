@@ -1,11 +1,13 @@
 use std::{env, path, fs, mem, ptr};
-use std::ffi::OsStr;
-use std::os::windows::ffi::OsStrExt;
+
+use std::ffi::{OsStr, OsString};
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::io::prelude::*;
 use std::str::FromStr;
 
 
 use winapi::ctypes::c_void;
+use winapi::ctypes::c_ulong;
 use winapi::um::sysinfoapi::SYSTEM_INFO;
 use winapi::um::winbase::MEMORYSTATUS;
 use winapi::um::winsock2::WSADATA;
@@ -24,6 +26,7 @@ use winapi::um::winsock2::WSASocketW;
 use winapi::um::winsock2::closesocket;
 use winapi::um::winsock2::WSAIoctl;
 use winapi::um::processthreadsapi::GetCurrentProcessId;
+use winapi::um::processenv::{GetEnvironmentVariableW as GetEnvironmentVariable, SetEnvironmentVariableW as SetEnvironmentVariable};
 
 
 
@@ -299,4 +302,32 @@ pub fn read_pid(ctx: &Context) -> std::io::Result<u32> {
 
 
     Ok(u32::from_str(&*contents).unwrap())
+}
+
+
+pub fn set_environment(name: &str, val: &str) {
+    unsafe { SetEnvironmentVariable(to_wchar(name).as_mut_ptr(), to_wchar(val).as_mut_ptr())  };
+
+    println!("[set_environment] name: {}, value: {}", name, val);
+}
+
+
+pub fn get_environment(name: &str) -> String {
+    let mut env_val: [u16; 1024] = unsafe { mem::zeroed() };
+
+    let ret = unsafe { GetEnvironmentVariable(to_wchar(name).as_mut_ptr(), env_val.as_mut_ptr(), 1024)  };
+    if ret == 0 {
+        println!("[get_environment] GetEnvironmentVariable({}) failed.", name);
+    }
+
+    let ret = OsString::from_wide(&env_val).into_string();
+    if let Ok(v) = ret {
+
+        println!("[get_environment] name: {}, value: {}", name, &v);
+
+        return v;
+    }
+   
+
+    return String::new();
 }

@@ -11,4 +11,4 @@ libc = "0.2.60"
 
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3.7", features = ["sysinfoapi", "consoleapi", "handleapi", "processthreadsapi", "synchapi", "wincon", "winuser", "winioctl", "winsock2"] }
+winapi = { version = "0.3.7", features = ["sysinfoapi", "consoleapi", "handleapi", "processthreadsapi", "processenv", "synchapi", "wincon", "winuser", "winioctl", "winsock2", "ws2ipdef"] }

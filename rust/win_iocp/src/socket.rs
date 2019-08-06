@@ -5,10 +5,11 @@ use std::{mem};
 
 use winapi::ctypes::{c_char, c_int};
 use winapi::um::winsock2::{u_long, SOCKET, FIONBIO, SOL_SOCKET, SO_REUSEADDR, SO_RCVBUF};
-//use winapi::shared::ws2def::IPPROTO_IPV6;
-//use winapi::shared::ws2ipdef::IPV6_V6ONLY;
+use winapi::shared::ws2def::IPPROTO_IPV6;
+use winapi::shared::ws2ipdef::IPV6_V6ONLY;
 
 use winapi::um::winsock2::{ioctlsocket, setsockopt, getsockopt};
+
 
 
 // not iocp
@@ -25,7 +26,6 @@ pub fn non_blocking(s: &SOCKET) -> i32 {
 
 
 pub fn blocking(s: &SOCKET) -> i32 {
-
     let mut nb = 0;
 
     let ret = unsafe { ioctlsocket(*s, FIONBIO, &mut nb) };
@@ -36,7 +36,7 @@ pub fn blocking(s: &SOCKET) -> i32 {
     ret
 }
 
-// after created
+
 pub fn reuse_addr(s: &SOCKET) -> i32 {
     let mut reuse: c_char = 1;
 
@@ -52,14 +52,11 @@ pub fn reuse_addr(s: &SOCKET) -> i32 {
     ret
 }
 
-/*
-// after created
 pub fn ipv6_only(s: &SOCKET) -> i32 {
-
-    let val: i8 = 1;
+    let mut val: c_char = 1;
 
     let ret = unsafe { 
-        setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY, &val as *const c_char, mem::size_of::<c_int>(i8))
+        setsockopt(*s, IPPROTO_IPV6 as c_int, IPV6_V6ONLY, &mut val as *const c_char, mem::size_of::<c_int>() as c_int)
     };
     if ret == -1 {
         println!("[ipv6_only] setsockopt(IPV6_V6ONLY) failed.");
@@ -69,7 +66,6 @@ pub fn ipv6_only(s: &SOCKET) -> i32 {
 
     ret
 }
-*/
 
 /*
     Dynamic send buffering for TCP was added on Windows 7 and Windows Server 2008 R2. 

@@ -23,8 +23,8 @@ use sock_addr::InetAddr;
 fn main() {
     println!("Win ICOP");
 
+
     let ipv4 = IPAddrV4::new(127, 0, 0, 0);
-    
     println!("IPv4: {}", ipv4);
 
 
@@ -64,7 +64,13 @@ fn main() {
     println!("Read pid: {}", pid);
 
 
-    process::single_process_cycle(&mut ctx);
+    os::set_environment("win_iocp", "123");
+    
+    let env_val = os::get_environment("win_iocp");
+    println!("Environment value: {}", env_val);
+
+
+    //process::single_process_cycle(&mut ctx);
     //process::master_process_cycle(&mut ctx);
 
 }

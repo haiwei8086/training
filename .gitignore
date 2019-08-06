@@ -18,3 +18,4 @@ Desktop.ini
 **/bin/**
 
 Cargo.lock
+pid.lock
