@@ -7,7 +7,6 @@ use std::str::FromStr;
 
 
 use winapi::ctypes::c_void;
-use winapi::ctypes::c_ulong;
 use winapi::um::sysinfoapi::SYSTEM_INFO;
 use winapi::um::winbase::MEMORYSTATUS;
 use winapi::um::winsock2::WSADATA;
@@ -313,7 +312,7 @@ pub fn set_environment(name: &str, val: &str) {
 
 
 pub fn get_environment(name: &str) -> String {
-    let mut env_val: [u16; 1024] = unsafe { mem::zeroed() };
+    let mut env_val: [u16; 128] = unsafe { mem::zeroed() };
 
     let ret = unsafe { GetEnvironmentVariable(to_wchar(name).as_mut_ptr(), env_val.as_mut_ptr(), 1024)  };
     if ret == 0 {

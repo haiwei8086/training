@@ -1,8 +1,10 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use std::{ptr};
+use std::{ptr, thread, time};
+use std::sync::{Arc, Weak, Mutex};
 use std::io::Error;
+use std::ops::Not;
 use std::ffi::{OsString, OsStr};
 use std::os::windows::prelude::*;
 
@@ -124,7 +126,19 @@ pub fn signal_process(ctx: &Context, signal: &str) {
 
 
 pub fn master_process_cycle(ctx: &mut Context) {
+    let process_type_key: &str = "pt";
+
+    let process_type: String = os::get_environment(process_type_key);
+
+    if process_type == "work" {
+        println!("Process type is work.");
+        // start worker
+    }
+
+
     println!("[master_process_cycle]");
+
+    os::set_environment(process_type_key, "master");
 
 
     create_signal_events(&mut ctx.events);
@@ -241,10 +255,12 @@ pub fn single_process_cycle(ctx: &mut Context) {
 
 
     create_signal_events(&mut ctx.events);
-    // TODO
     for event in &mut ctx.events {
         println!("[single_process_cycle] Signal event: {:?} {}", event.handle, event.path);
     }
+
+    let arc_ctx = Arc::new(&*ctx);
+    let worker = worker_thread(Arc::downgrade(&arc_ctx));
 
 
     if let Some(_event) = ctx.events.iter().find(|&e| e.name == "stop") {
@@ -253,6 +269,10 @@ pub fn single_process_cycle(ctx: &mut Context) {
         unsafe {
             WaitForSingleObject(_event.handle, INFINITE)
         };
+
+        ctx.stop = true;
+
+        worker.join().unwrap();
     }
 }
 
@@ -261,4 +281,23 @@ pub fn master_process_exit() {
 
     println!("master_process_exit");
 
+}
+
+
+fn worker_thread(ctx: Weak<&Context>) -> thread::JoinHandle<()> {
+
+    let worker = thread::spawn(move || {
+        println!("Worker thread.");
+
+        let wait_millis = time::Duration::from_millis(1 * 1000);
+
+        while *ctx.stop {
+            println!("in working...");
+
+            thread::sleep(wait_millis);
+        }
+    });
+
+
+    worker
 }

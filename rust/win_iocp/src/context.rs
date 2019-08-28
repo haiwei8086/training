@@ -31,6 +31,7 @@ pub struct Context {
 
     pub events: Vec<SignalEvent>,
 
+    pub stop: bool,
 }
 
 
@@ -50,6 +51,8 @@ impl<'a> Context {
 
             arguments: BTreeMap::new(),
             events: Vec::new(), 
+
+            stop: false,
         };
         
 

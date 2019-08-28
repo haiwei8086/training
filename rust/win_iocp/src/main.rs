@@ -49,9 +49,7 @@ fn main() {
 
 
     if ctx.arguments.contains_key("-s") {
-
         if let Some(val) = ctx.arguments.get("-s") {
-
             process::signal_process(&ctx, val);
             return;
         }
@@ -70,7 +68,7 @@ fn main() {
     println!("Environment value: {}", env_val);
 
 
-    //process::single_process_cycle(&mut ctx);
+    process::single_process_cycle(&mut ctx);
     //process::master_process_cycle(&mut ctx);
 
 }
