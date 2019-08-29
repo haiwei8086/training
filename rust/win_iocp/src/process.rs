@@ -259,8 +259,10 @@ pub fn single_process_cycle(ctx: &mut Context) {
         println!("[single_process_cycle] Signal event: {:?} {}", event.handle, event.path);
     }
 
-    let arc_ctx = Arc::new(&*ctx);
-    let worker = worker_thread(Arc::downgrade(&arc_ctx));
+
+
+    let ctx_ptr = ctx as *mut Context as usize;
+    let worker = worker_thread(ctx_ptr);
 
 
     if let Some(_event) = ctx.events.iter().find(|&e| e.name == "stop") {
@@ -270,10 +272,16 @@ pub fn single_process_cycle(ctx: &mut Context) {
             WaitForSingleObject(_event.handle, INFINITE)
         };
 
-        ctx.stop = true;
 
+        println!("Set context stop is true.");
+        ctx.stop = true;
+        
+        
         worker.join().unwrap();
     }
+
+
+    println!("single_process_cycle exit.");
 }
 
 
@@ -284,18 +292,30 @@ pub fn master_process_exit() {
 }
 
 
-fn worker_thread(ctx: Weak<&Context>) -> thread::JoinHandle<()> {
+fn worker_thread(ctx_ptr: usize) -> thread::JoinHandle<()> {
 
     let worker = thread::spawn(move || {
-        println!("Worker thread.");
+        let ctx = ctx_ptr as *const Context;
+
+        println!("Worker thread. ctx: {:?}", ctx);
+
 
         let wait_millis = time::Duration::from_millis(1 * 1000);
 
-        while *ctx.stop {
-            println!("in working...");
+
+        loop {
+            println!("Worker thread loop...");
 
             thread::sleep(wait_millis);
+
+
+            if unsafe { (*ctx).stop } {
+                println!("Context stop is changed: {:?}", unsafe { (*ctx).stop });
+                break;
+            }
         }
+
+        println!("Worker thread loop end");
     });
 
 
