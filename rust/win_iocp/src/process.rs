@@ -295,8 +295,8 @@ pub fn master_process_exit() {
 fn worker_thread(ctx_ptr: usize) -> thread::JoinHandle<()> {
 
     let worker = thread::spawn(move || {
+        
         let ctx = ctx_ptr as *const Context;
-
         println!("Worker thread. ctx: {:?}", ctx);
 
 

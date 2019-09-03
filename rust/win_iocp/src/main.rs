@@ -13,6 +13,7 @@ mod os;
 mod context;
 mod process;
 mod socket;
+mod event;
 
 
 use ip::IPAddrV4;

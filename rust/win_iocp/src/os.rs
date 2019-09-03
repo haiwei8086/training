@@ -19,14 +19,10 @@ use winapi::shared::minwindef::LPVOID;
 use winapi::um::sysinfoapi::GetSystemInfo;
 use winapi::um::winbase::GlobalMemoryStatus;
 use winapi::um::sysinfoapi::GetVersion;
-use winapi::um::winsock2::WSAStartup;
-use winapi::um::winsock2::WSACleanup;
-use winapi::um::winsock2::WSASocketW;
-use winapi::um::winsock2::closesocket;
-use winapi::um::winsock2::WSAIoctl;
+use winapi::um::winsock2::{WSAStartup, WSACleanup, WSASocketW, closesocket, WSAIoctl};
 use winapi::um::processthreadsapi::GetCurrentProcessId;
 use winapi::um::processenv::{GetEnvironmentVariableW as GetEnvironmentVariable, SetEnvironmentVariableW as SetEnvironmentVariable};
-
+use winapi::shared::minwindef::{LOBYTE, HIBYTE};
 
 
 use super::consts;
@@ -122,6 +118,15 @@ fn init_winsock() {
         0 => println!("WSAStartup() successed."),
         _ => println!("WSAStartup() failed. code: {}", ret),
     }
+
+
+    if LOBYTE(wsa_data.wVersion) != 2 && HIBYTE(wsa_data.wVersion) != 2 {
+        println!("Failed: WinSock version: {:?}, {:?}", LOBYTE(wsa_data.wVersion), HIBYTE(wsa_data.wVersion));
+
+        unsafe { WSACleanup() };
+        return;
+    }
+    println!("WinSock version: {:?}, {:?}", LOBYTE(wsa_data.wVersion), HIBYTE(wsa_data.wVersion));
 
 
     /*
