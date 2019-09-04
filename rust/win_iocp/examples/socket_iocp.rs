@@ -34,6 +34,12 @@ use winapi::um::processthreadsapi::CreateThread;
 use winapi::um::synchapi::WaitForSingleObject;
 
 
+pub const BUFF_SIZE: u32 = 1024;
+
+type LPFN_AcceptEx = unsafe extern "system" fn(SOCKET, SOCKET, PVOID, DWORD, DWORD, DWORD, LPDWORD, LPOVERLAPPED) -> BOOL;
+type LPFN_GetAcceptExSockaddrs = unsafe extern "system" fn(PVOID, DWORD, DWORD, DWORD, *mut SOCKADDR, *mut c_int, *mut SOCKADDR, *mut c_int);
+
+
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct sockaddr_in {
@@ -50,126 +56,113 @@ pub struct in_addr {
 }
 
 
-type LPFN_AcceptEx = unsafe extern "system" fn(SOCKET, SOCKET, PVOID, DWORD, DWORD, DWORD, LPDWORD, LPOVERLAPPED) -> BOOL;
-type LPFN_GetAcceptExSockaddrs = unsafe extern "system" fn(PVOID, DWORD, DWORD, DWORD, *mut SOCKADDR, *mut c_int, *mut SOCKADDR, *mut c_int);
+pub struct MainContext 
+{
+    pub socket_fd: SOCKET,
+    pub iocp: HANDLE,
+    
+    pub accept_ex_fn: LPFN_AcceptEx,
+    pub get_accept_sock_addrs_fn: LPFN_GetAcceptExSockaddrs,
+}
+
+impl MainContext {
+    pub fn new() -> Self {
+        MainContext {
+            socket_fd: INVALID_SOCKET,
+            iocp: INVALID_HANDLE_VALUE,
+
+            accept_ex_fn: unsafe { mem::zeroed() },
+            get_accept_sock_addrs_fn: unsafe { mem::zeroed() },
+        }
+    }
+}
+
+impl Drop for MainContext  {
+    fn drop(&mut self) {
+        unsafe {
+            closesocket(self.socket_fd);
+            CloseHandle(self.iocp);
+            WSACleanup();
+        };
+    }
+}
+
+
+pub struct IOContext 
+{
+    pub over_lapped: OVERLAPPED,
+    pub accept_fd: SOCKET,
+    pub action: usize,
+    pub buf: [i8; BUFF_SIZE as usize],
+}
+
+impl IOContext {
+
+    pub fn new() -> Self {
+        IOContext {
+            over_lapped: unsafe { mem::zeroed() },
+            accept_fd: INVALID_SOCKET,
+            buf: unsafe { mem::zeroed() },
+            action: 10,
+        }
+    }
+}
+
+
 
 
 fn main() {
+
     let std_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9120);
+
+
+    let mut ctx = MainContext::new();
+    let ctx_ptr = &mut ctx as *mut MainContext;
+
 
     load_wsa();
 
 
-    let iocp = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, ptr::null_mut(), 0, 0) };
-    let socket_fd = unsafe { WSASocketW(AF_INET, SOCK_STREAM, 0, ptr::null_mut(), 0, WSA_FLAG_OVERLAPPED) };
-
-    println!("IOCP: {:?}, Socket: {:?}", iocp, socket_fd);
+    ctx.iocp = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, ptr::null_mut(), 0, 0) };
+    ctx.socket_fd = unsafe { WSASocketW(AF_INET, SOCK_STREAM, 0, ptr::null_mut(), 0, WSA_FLAG_OVERLAPPED) };
 
 
-    let worker = unsafe { CreateThread(ptr::null_mut(), 0, Some(worker), iocp, 0, 0 as *mut _)};
+    println!("IOCP: {:?}, Socket: {:?}", ctx.iocp, ctx.socket_fd);
+
+
+    let worker = unsafe { CreateThread(ptr::null_mut(), 0, Some(worker), ctx_ptr as *mut _, 0, 0 as *mut _)};
 
 
     // Associate the listening socket with the completion port
-    unsafe { CreateIoCompletionPort(socket_fd as HANDLE, iocp, 0, 0) };
+    unsafe { CreateIoCompletionPort(ctx.socket_fd as HANDLE, ctx.iocp, ctx_ptr as usize, 0) };
 
 
     let (addr, addr_len) = socket_addr_to_ptrs(&std_addr);
-    let bind_ret = unsafe { bind(socket_fd, addr, addr_len) };
+    let bind_ret = unsafe { bind(ctx.socket_fd, addr, addr_len) };
 
     println!("bind: {:?}  WSAGetLastError: {:?}", bind_ret, unsafe { WSAGetLastError() });
 
     unsafe { 
         let mut reuse: c_char = 1;
-        setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &mut reuse as *const c_char, mem::size_of::<c_int>() as c_int)
+        setsockopt(ctx.socket_fd, SOL_SOCKET, SO_REUSEADDR, &mut reuse as *const c_char, mem::size_of::<c_int>() as c_int)
     };
-    unsafe { listen(socket_fd, SOMAXCONN) };
-
-    println!("WSAGetLastError: {:?}", unsafe { WSAGetLastError() });
+    unsafe { listen(ctx.socket_fd, SOMAXCONN) };
 
 
-    let mut accept_ex_ret = 0 as usize;
-    let mut bytes = 0;
-    let io_ret = unsafe {
-        WSAIoctl(
-            socket_fd,
-            SIO_GET_EXTENSION_FUNCTION_POINTER,
-            &WSAID_ACCEPTEX as *const _ as *mut _,
-            mem::size_of_val(&WSAID_ACCEPTEX) as DWORD,
-            &mut accept_ex_ret as *mut _ as *mut c_void,
-            mem::size_of_val(&accept_ex_ret) as DWORD,
-            &mut bytes,
-            0 as *mut _, 
-            None)
-    };
-    if io_ret == SOCKET_ERROR {
-        println!("WSAIoctl(LPFN_AcceptEx) failed.");
-    }
-    println!("WSAIoctl ret: {:?}", io_ret);
+    ctx.accept_ex_fn = accept_ex_ref(ctx.socket_fd);
+    ctx.get_accept_sock_addrs_fn = get_accept_sock_addrs_ref(ctx.socket_fd);
 
-    let accept_ex = unsafe { mem::transmute::<_, LPFN_AcceptEx>(accept_ex_ret) };
-
-
-    let mut get_accept_sock_addrs_ret = 0 as usize;
-    let io_ret = unsafe {
-        WSAIoctl(
-            socket_fd,
-            SIO_GET_EXTENSION_FUNCTION_POINTER,
-            &WSAID_GETACCEPTEXSOCKADDRS as *const _ as *mut _,
-            mem::size_of_val(&WSAID_GETACCEPTEXSOCKADDRS) as DWORD,
-            &mut get_accept_sock_addrs_ret as *mut _ as *mut c_void,
-            mem::size_of_val(&get_accept_sock_addrs_ret) as DWORD,
-            &mut bytes,
-            0 as *mut _, 
-            None)
-    };
-    if io_ret == SOCKET_ERROR {
-        println!("WSAIoctl(SIO_GET_EXTENSION_FUNCTION_POINTER) failed.");
-    }
-    println!("WSAIoctl ret: {:?}", io_ret);
-
-    let get_accept_sock_addrs = unsafe { mem::transmute::<_, LPFN_GetAcceptExSockaddrs>(get_accept_sock_addrs_ret) };
-
-
-
-    let accept_fd = unsafe { WSASocketW(AF_INET, SOCK_STREAM, 0, ptr::null_mut(), 0, WSA_FLAG_OVERLAPPED) };
-
-    let mut over_lapped: OVERLAPPED = unsafe { mem::zeroed() };
-
-    let mut out_buf: [i8; 1024] = unsafe { mem::zeroed() };
-    let mut ex_bytes = 0;
-    let sock_len = mem::size_of::<SOCKADDR_IN>() as u32;
-
-
-    println!("out buf len: {:?}, sockaddr_in len: {:?}", out_buf.len(), sock_len);
-    println!("Server socket: {:?}, Accept socket: {:?}", socket_fd, accept_fd);
 
     println!("WSAGetLastError: {:?}", unsafe { WSAGetLastError() });
 
     
-    let ret = unsafe {
-        accept_ex(
-            socket_fd, 
-            accept_fd, 
-            &mut out_buf as *mut _ as PVOID,
-            0,
-            sock_len + 16,
-            sock_len + 16,
-            &mut ex_bytes,
-            &mut over_lapped)
-    };
-    println!("AcceptEx ret: {:?}.", ret);
-    println!("WSAGetLastError: {:?}", unsafe { WSAGetLastError() });
-    
+    post_accept(&ctx);
+
 
     unsafe {
         WaitForSingleObject(worker, INFINITE)
     };
 
-
-    unsafe { closesocket(socket_fd) };
-    unsafe { closesocket(accept_fd) };
-    unsafe { CloseHandle(iocp) };
-    unsafe { WSACleanup() };
 }
 
 
@@ -207,17 +200,71 @@ fn socket_addr_to_ptrs(addr: &SocketAddr) -> (*const SOCKADDR, c_int) {
 }
 
 
+fn accept_ex_ref(socket_fd: usize) -> LPFN_AcceptEx {
+
+    let mut accept_ex_fn = 0 as usize;
+    let mut bytes = 0;
+
+    let io_ret = unsafe {
+        WSAIoctl(
+            socket_fd,
+            SIO_GET_EXTENSION_FUNCTION_POINTER,
+            &WSAID_ACCEPTEX as *const _ as *mut _,
+            mem::size_of_val(&WSAID_ACCEPTEX) as DWORD,
+            &mut accept_ex_fn as *mut _ as *mut c_void,
+            mem::size_of_val(&accept_ex_fn) as DWORD,
+            &mut bytes,
+            0 as *mut _, 
+            None)
+    };
+
+    if io_ret == SOCKET_ERROR {
+        println!("WSAIoctl(LPFN_AcceptEx) failed.");
+    }
+    
+    unsafe { mem::transmute::<_, LPFN_AcceptEx>(accept_ex_fn) }
+}
+
+
+fn get_accept_sock_addrs_ref(socket_fd: usize) -> LPFN_GetAcceptExSockaddrs {
+
+    let mut bytes = 0;
+    let mut get_accept_sock_addrs_fn = 0 as usize;
+    
+    let io_ret = unsafe {
+        WSAIoctl(
+            socket_fd,
+            SIO_GET_EXTENSION_FUNCTION_POINTER,
+            &WSAID_GETACCEPTEXSOCKADDRS as *const _ as *mut _,
+            mem::size_of_val(&WSAID_GETACCEPTEXSOCKADDRS) as DWORD,
+            &mut get_accept_sock_addrs_fn as *mut _ as *mut c_void,
+            mem::size_of_val(&get_accept_sock_addrs_fn) as DWORD,
+            &mut bytes,
+            0 as *mut _, 
+            None)
+    };
+
+    if io_ret == SOCKET_ERROR {
+        println!("WSAIoctl(SIO_GET_EXTENSION_FUNCTION_POINTER) failed.");
+    }
+
+    
+    unsafe { mem::transmute::<_, LPFN_GetAcceptExSockaddrs>(get_accept_sock_addrs_fn) }
+}
+
+
 unsafe extern "system" fn worker(param: LPVOID) -> u32 {
     println!("Worker :{:?}", param);
 
-    let iocp = param;
+    let ctx = mem::transmute::<_, &mut MainContext>(param);
+
     let mut count = 0;
     let mut action_type = 10;
     let mut over_lapped = mem::zeroed();
 
     loop {
         GetQueuedCompletionStatus(
-            iocp,
+            ctx.iocp,
             &mut count,
             &mut action_type,
             &mut over_lapped,
@@ -235,6 +282,34 @@ unsafe extern "system" fn worker(param: LPVOID) -> u32 {
             _ => println!("Error: {:?}", WSAGetLastError()),
         }
     }
+}
+
+
+fn post_accept(ctx: &MainContext) {
+
+    let mut io_ctx = IOContext::new();
+    io_ctx.action = 0;
+    io_ctx.accept_fd = unsafe { WSASocketW(AF_INET, SOCK_STREAM, 0, ptr::null_mut(), 0, WSA_FLAG_OVERLAPPED) };
+
+
+    let sock_len = mem::size_of::<SOCKADDR_IN>() as u32;
+    let mut dw_bytes = 0;
+
+    unsafe {
+        (ctx.accept_ex_fn)(
+            ctx.socket_fd,
+            io_ctx.accept_fd,
+            &mut io_ctx.buf as *mut _ as *mut c_void,
+            0,
+            sock_len + 16,
+            sock_len + 16,
+            &mut dw_bytes,
+            &mut io_ctx.over_lapped
+        )
+    };
+    
+
+    println!("post_accept, WSAGetLastError: {:?}", unsafe { WSAGetLastError() });
 }
 
 
