@@ -10,5 +10,22 @@ edition = "2018"
 libc = "0.2.60"
 
 
-[target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3.7", features = ["sysinfoapi", "consoleapi", "handleapi", "minwindef", "minwinbase", "mswsock", "processthreadsapi", "processenv", "synchapi", "wincon", "winuser", "winioctl", "winsock2", "ws2ipdef", "ioapiset"] }
+[target.'cfg(windows)'.dependencies.winapi]
+version = "0.3.7"
+features = [
+    "sysinfoapi", 
+    "consoleapi", 
+    "handleapi", 
+    "minwindef", 
+    "minwinbase", 
+    "mswsock", 
+    "processthreadsapi", 
+    "processenv", 
+    "synchapi", 
+    "wincon", 
+    "winuser", 
+    "winioctl", 
+    "winsock2", 
+    "ws2ipdef", 
+    "ioapiset"
+]
