@@ -16,9 +16,6 @@ pub fn init(ctx: &mut context::Context) {
 
     let socket_fd = socket::create();
     let iocp = create_iocp();
-
-    ctx.socket_fd = socket_fd;
-    ctx.iocp = iocp;
 }
 
 
