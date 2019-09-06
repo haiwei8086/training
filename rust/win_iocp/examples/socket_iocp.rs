@@ -13,7 +13,7 @@ use winapi::ctypes::c_void;
 use winapi::um::winnt::HANDLE;
 use winapi::shared::guiddef::GUID;
 use winapi::um::handleapi::INVALID_HANDLE_VALUE;
-use winapi::shared::ws2def::{AF_INET, SOCK_STREAM, SOCKADDR, SOCKADDR_IN, SIO_GET_EXTENSION_FUNCTION_POINTER, WSABUF};
+use winapi::shared::ws2def::{AF_INET, SOCK_STREAM, SOCKADDR, SOCKADDR_IN, IPPROTO_IP, SIO_GET_EXTENSION_FUNCTION_POINTER, WSABUF};
 use winapi::um::winsock2::{u_long, SOCKET, WSADATA, LPWSADATA, SOL_SOCKET, SO_REUSEADDR, SOCKET_ERROR, INVALID_SOCKET, SOMAXCONN, WSA_FLAG_OVERLAPPED, WSADESCRIPTION_LEN, WSASYS_STATUS_LEN};
 use winapi::um::winnt::PVOID;
 use winapi::shared::minwindef::{DWORD, BOOL, LPVOID, LPDWORD};
@@ -24,12 +24,10 @@ use winapi::shared::ws2ipdef::SOCKADDR_IN6_LH;
 use winapi::um::mswsock::{WSAID_ACCEPTEX, WSAID_GETACCEPTEXSOCKADDRS};
 
 
-use winapi::um::winsock2::{WSAStartup, WSACleanup, WSASocketW, WSARecv, WSASend, socket, setsockopt, bind, listen, closesocket, htons, inet_addr};
+use winapi::um::winsock2::{WSAIoctl, WSAGetLastError, WSAStartup, WSACleanup, WSASocketW, WSARecv, WSASend, socket, setsockopt, bind, listen, closesocket, shutdown, htons, inet_addr};
 use winapi::shared::minwindef::{LOBYTE, HIBYTE};
 use winapi::um::ioapiset::{CreateIoCompletionPort, GetQueuedCompletionStatus};
 use winapi::um::handleapi::CloseHandle;
-use winapi::um::winsock2::WSAIoctl;
-use winapi::um::winsock2::WSAGetLastError;
 use winapi::um::processthreadsapi::CreateThread;
 use winapi::um::synchapi::WaitForSingleObject;
 
@@ -38,7 +36,7 @@ type LPFN_AcceptEx = unsafe extern "system" fn(SOCKET, SOCKET, PVOID, DWORD, DWO
 type LPFN_GetAcceptExSockaddrs = unsafe extern "system" fn(PVOID, DWORD, DWORD, DWORD, *mut SOCKADDR, *mut c_int, *mut SOCKADDR, *mut c_int);
 
 
-const MAX_WORKERS: u32 = 2;
+const MAX_WORKERS: u32 = 1;
 const MAX_BUFFER_LEN: u32 = 4096;
 
 
@@ -55,8 +53,6 @@ struct Context {
 
 struct SocketContext {
     pub socket: SOCKET,                     // Socket
-    pub client_addr: SOCKADDR_IN,           // 这个客户端的地址
-    pub contexts: Vec<PerIOContext>,        // 数组，所有客户端IO操作的参数，
 }
 
 
@@ -86,9 +82,7 @@ impl Context {
 impl SocketContext {
     pub fn new() -> Self {
         SocketContext {
-            socket: INVALID_SOCKET,
-            client_addr: unsafe { mem::zeroed() },
-            contexts: Vew::new(),
+            socket: INVALID_SOCKET
         }
     }
 }
@@ -118,8 +112,8 @@ impl PerIOContext {
         self.ol = unsafe { mem::zeroed() };
         self.buf = unsafe { mem::zeroed() };
         self.action = 10;
-        self.recv_bytes: 0,
-        self.send_bytes: 0,
+        self.recv_bytes = 0;
+        self.send_bytes = 0;
 
         self.wsa_buf = WSABUF {
             len: MAX_BUFFER_LEN,
@@ -128,21 +122,12 @@ impl PerIOContext {
     }
 }
 
-impl Drop for PerIOContext {
-    fn drop(&mut self) {
-        unsafe {
-            closesocket(self.accept_fd)
-        };
-    }
-}
-
-
 
 
 fn main() {
     let mut ctx = Context::new();
     let ctx_ptr = &mut ctx as *mut Context;
-    let std_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9120);
+    let std_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 5000);
 
 
     load_wsa();
@@ -152,18 +137,21 @@ fn main() {
     ctx.listen_fd = unsafe { WSASocketW(AF_INET, SOCK_STREAM, 0, ptr::null_mut(), 0, WSA_FLAG_OVERLAPPED) };
 
 
-    println!("IOCP: {:?}, Socket: {:?}", ctx.iocp, ctx.listen_fd);
+    println!("Context: {:?}, IOCP: {:?}, Socket: {:?}", ctx_ptr, ctx.iocp, ctx.listen_fd);
 
     
-    for i in 1..MAX_WORKERS {
-        ctx.workers.push(
-            unsafe { CreateThread(ptr::null_mut(), 0, Some(worker), ctx_ptr as *mut _, 0, 0 as *mut _)}
-        );
+    for _ in 0..MAX_WORKERS {
+        let thandel = unsafe { CreateThread(ptr::null_mut(), 0, Some(worker), ctx_ptr as *mut _, 0, 0 as *mut _)};
+        ctx.workers.push(thandel);
     }
-    
+
+    println!("Worker thread: {:?}", ctx.workers[0]);
+
 
     let mut socket_ctx = SocketContext::new();
     socket_ctx.socket = ctx.listen_fd;
+
+    println!("SocketContext: {:?}", &socket_ctx as *const _);
 
     // Associate the listening socket with the completion port
     unsafe { CreateIoCompletionPort(ctx.listen_fd as HANDLE, ctx.iocp, &mut socket_ctx as *mut _ as usize, 0) };
@@ -190,9 +178,7 @@ fn main() {
     println!("WSAGetLastError: {:?}", unsafe { WSAGetLastError() });
 
     
-    
-    for i in 1..MAX_WORKERS {
-
+    for _ in 0..MAX_WORKERS {
         let mut io_ctx = PerIOContext::new();
         println!("PerIOContext: {:?}", &io_ctx as *const _);
 
@@ -200,7 +186,7 @@ fn main() {
     }
 
 
-    println!("WSAGetLastError: {:?}", unsafe { WSAGetLastError() });
+    println!("Worker handle: {:?} WSAGetLastError: {:?}", ctx.workers[0], unsafe { WSAGetLastError() });
 
 
     unsafe {
@@ -289,7 +275,7 @@ fn get_accept_sock_addrs_ref(socket_fd: usize) -> LPFN_GetAcceptExSockaddrs {
     };
 
     if io_ret == SOCKET_ERROR {
-        println!("WSAIoctl(SIO_GET_EXTENSION_FUNCTION_POINTER) failed.");
+        println!("WSAIoctl(LPFN_GetAcceptExSockaddrs) failed.");
     }
 
     
@@ -305,36 +291,36 @@ unsafe fn slice2buf(slice: &[u8]) -> WSABUF {
 }
 
 unsafe extern "system" fn worker(param: LPVOID) -> u32 {
-    println!("Worker :{:?}", param);
+    let ctx = mem::transmute::<_, &mut Context>(param);
 
-    let iocp = param;
+    println!("Worker Context: {:?}, IOCP: {:?}, Socket: {:?}", param, ctx.iocp, ctx.listen_fd);
 
-
-    let mut count = 0;
-    let mut socket_ptr = mem::zeroed();
-    let mut io_ctx_ptr = mem::zeroed();
-    
     loop {
+        println!("GetQueuedCompletionStatus...");
+
+        let mut count = 0;
+        let mut socket_ptr = mem::zeroed();
+        let mut io_ctx_ptr = mem::zeroed();
+
         GetQueuedCompletionStatus(
-            iocp,
+            ctx.iocp,
             &mut count,
             &mut socket_ptr,
             &mut io_ctx_ptr,
             INFINITE
         );
 
+        println!("Have a QueuedCompletionStatus");
+
         let socket_ctx = mem::transmute::<_, &mut SocketContext>(socket_ptr);
         let mut io_ctx = mem::transmute::<_, &mut PerIOContext>(io_ctx_ptr);
 
-        println!("Byte count: {:?}", count);
-        println!("PerIOContext: {:?}", io_ctx_ptr);
-        println!("Socket context: {:?}", socket_ctx as *mut _);
-
+        println!("Action: {:?}", io_ctx.action);
 
         match io_ctx.action {
-            0 => do_accept(iocp, &socket_ctx, &mut io_ctx),
-            1 => do_recv(&socket_ctx),
-            2 => do_send(&socket_ctx, &io_ctx),
+            0 => do_accept(&ctx, &socket_ctx, &mut io_ctx),
+            1 => do_recv(&socket_ctx, &mut io_ctx),
+            2 => do_send(&socket_ctx, &mut io_ctx),
             _ => println!("Error: {:?}", WSAGetLastError()),
         }
     }
@@ -346,7 +332,7 @@ fn post_accept(ctx: &Context, socket_ctx: &SocketContext, io_ctx: &mut PerIOCont
 
     
     let sock_len = mem::size_of::<SOCKADDR_IN>() as u32;
-    io_ctx.accept_fd = unsafe { WSASocketW(AF_INET, SOCK_STREAM, 0, ptr::null_mut(), 0, WSA_FLAG_OVERLAPPED) };
+    io_ctx.accept_fd = unsafe { WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_IP, ptr::null_mut(), 0, WSA_FLAG_OVERLAPPED) };
     io_ctx.action = 0;
 
 
@@ -365,13 +351,15 @@ fn post_accept(ctx: &Context, socket_ctx: &SocketContext, io_ctx: &mut PerIOCont
             &mut io_ctx.ol
         )
     };
+
+    println!("post_accept, WSAGetLastError: {:?}", unsafe { WSAGetLastError() });
 }
 
 
 fn do_accept(ctx: &Context, socket_ctx: &SocketContext, io_ctx: &mut PerIOContext) {
     println!("do_accept");
 
-
+    /*
     unsafe { 
         setsockopt(
             io_ctx.accept_fd, 
@@ -381,9 +369,12 @@ fn do_accept(ctx: &Context, socket_ctx: &SocketContext, io_ctx: &mut PerIOContex
             mem::size_of_val(&ctx.listen_fd) as c_int)
     };
 
+    println!("setsockopt(SO_UPDATE_ACCEPT_CONTEXT)");
+    */
     
-    let locale_addr_ptr: *mut SOCKADDR_IN = unsafe { mem::zeroed() };
-    let client_addr_ptr: *mut SOCKADDR_IN = unsafe { mem::zeroed() };
+    /*
+    let mut locale_addr_ptr = unsafe { mem::zeroed() };
+    let mut client_addr_ptr = unsafe { mem::zeroed() };
     let mut add_len = mem::size_of::<SOCKADDR_IN>() as u32;
 
     unsafe {
@@ -394,18 +385,21 @@ fn do_accept(ctx: &Context, socket_ctx: &SocketContext, io_ctx: &mut PerIOContex
             add_len + 16,
             add_len + 16,
 
-            locale_addr_ptr as *mut _,
+            &mut locale_addr_ptr as *mut _,
             &mut add_len as *mut _ as *mut c_int,
-            client_addr_ptr as *mut _,
+            &mut client_addr_ptr as *mut _,
             &mut add_len as *mut _ as *mut c_int,
         )
     };
 
-    let locale_addr = unsafe { mem::transmute::<_, std::net::SocketAddrV4>(locale_addr_ptr) };
-    let client_addr = unsafe { mem::transmute::<_, std::net::SocketAddrV4>(client_addr_ptr) };
     
-    println!("Locale addr: {:?}", locale_addr);
-    println!("Client addr: {:?}", client_addr);
+    let locale_addr = unsafe { mem::transmute::<_, *mut std::net::SocketAddrV4>(locale_addr_ptr) };
+    let client_addr = unsafe { mem::transmute::<_, *mut std::net::SocketAddrV4>(client_addr_ptr) };
+    
+    
+    println!("Locale addr: {:?}", locale_addr_ptr);
+    println!("Client addr: {:?}", client_addr_ptr);
+    */
     
     
     let mut new_socket_ctx = SocketContext::new();
@@ -426,6 +420,8 @@ fn do_accept(ctx: &Context, socket_ctx: &SocketContext, io_ctx: &mut PerIOContex
             0) 
     };
 
+    println!("do_accept, WSAGetLastError: {:?}", unsafe { WSAGetLastError() });
+
 
     let mut new_io_ctx = PerIOContext::new();
     new_io_ctx.accept_fd = new_socket_ctx.socket;
@@ -435,7 +431,11 @@ fn do_accept(ctx: &Context, socket_ctx: &SocketContext, io_ctx: &mut PerIOContex
 
 
 fn post_recv(io_ctx: &mut PerIOContext) {
+    println!("post_recv, socket: {:?}", io_ctx.accept_fd);
+
     let mut dw_byetes = 0;
+    let mut dw_flags = 0;
+
     io_ctx.action = 1;
     
     unsafe { 
@@ -444,7 +444,7 @@ fn post_recv(io_ctx: &mut PerIOContext) {
             &mut io_ctx.wsa_buf, 
             1, 
             &mut dw_byetes, 
-            0 as *mut _, 
+            &mut dw_flags, 
             &mut io_ctx.ol, 
             None)
     };
@@ -457,19 +457,17 @@ fn do_recv(ctx: &SocketContext, io_ctx: &mut PerIOContext) {
     println!("do_recv");
     println!("Recv data: {:?}", io_ctx.wsa_buf.buf);
 
-    io_ctx.reset();
-    
     post_send(&ctx, io_ctx);
 }
 
 
 fn post_send(ctx: &SocketContext, io_ctx: &mut PerIOContext) {
     println!("post_send");
-    println!("Recv data: {:?}", io_ctx.wsa_buf.buf);
 
-    io_ctx.wsa_buf.buf = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\nWelcome to Server".as_bytes();
-    io_ctx.wsa_buf.len = mem::size_of_val(io_ctx.wsa_buf.buf) as usize;
-    
+    let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\nWelcome to Server".as_bytes();
+
+    io_ctx.reset();
+    io_ctx.wsa_buf = unsafe { slice2buf(&response) };
     io_ctx.action = 2;
 
     unsafe {
@@ -477,7 +475,7 @@ fn post_send(ctx: &SocketContext, io_ctx: &mut PerIOContext) {
             io_ctx.accept_fd,
             &mut io_ctx.wsa_buf as *mut _,
             1,
-            &mut io_ctx.recv_bytes as *mut _,
+            &mut io_ctx.send_bytes as *mut _,
             0,
             &mut io_ctx.ol,
             None

@@ -214,7 +214,7 @@ int PostAcceptEx(PER_HANDLE_DATA* PerHandleData, PER_IO_OPERATION_DATA* PerIoDat
 		&(PerIoData->BytesRECV),
 		&(PerIoData->Overlapped)
 	);
-	
+		
 	return 0;
 }
 
@@ -338,19 +338,19 @@ int PostSend(PER_HANDLE_DATA* handle_data, PER_IO_OPERATION_DATA* PerIoData)
 	DWORD SendBytes = 0;
 	DWORD Flags;
 
-	char* buf = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n Welcome to Server";
+	char bufs[] = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\nWelcome to Server.";
 	
-	PerIoData->DataBuf.buf = buf;
-	PerIoData->DataBuf.len = DATA_BUFSIZE;
+	PerIoData->DataBuf.buf = &bufs;
+	PerIoData->DataBuf.len = sizeof(bufs) - 1;
 	
-	//PerIoData->Overlapped.hEvent = WSACreateEvent();
+	PerIoData->Overlapped.hEvent = WSACreateEvent();
 	PerIoData->Action = 2;
 
 	WSASend(PerIoData->Accept, &(PerIoData->DataBuf), 1, &dwBytes, 0, &(PerIoData->Overlapped), NULL);
 
 	printf("PostSend send bytest: %d err: %d\n", dwBytes, GetLastError());
 
-	/*
+	
 	WSAWaitForMultipleEvents(1, &PerIoData->Overlapped.hEvent, TRUE, INFINITE, TRUE);
 	printf("WSAWaitForMultipleEvents err: %d\n", GetLastError());
 
@@ -359,7 +359,7 @@ int PostSend(PER_HANDLE_DATA* handle_data, PER_IO_OPERATION_DATA* PerIoData)
 
 	WSAResetEvent(PerIoData->Overlapped.hEvent);
 	printf("WSAResetEvent err: %d\n", GetLastError());
-	*/
+
 
 	return 0;
 }
@@ -369,7 +369,9 @@ int DoSend(PER_HANDLE_DATA* PerHandleData, PER_IO_OPERATION_DATA* PerIoData)
 {
 	printf("DoSend \n");
 
-	//closesocket(PerIoData->Accept);
+	shutdown(PerIoData->Accept, SD_BOTH);
+
+	GlobalFree(PerIoData);
 }
 
 

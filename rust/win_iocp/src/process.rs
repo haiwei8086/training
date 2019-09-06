@@ -260,7 +260,6 @@ pub fn single_process_cycle(ctx: &mut Context) {
     }
 
 
-
     let ctx_ptr = ctx as *mut Context as usize;
     let worker = worker_thread(ctx_ptr);
 
@@ -268,10 +267,7 @@ pub fn single_process_cycle(ctx: &mut Context) {
     if let Some(_event) = ctx.events.iter().find(|&e| e.name == "stop") {
         println!("[signal_process] WaitForSingleObject {}", _event.name);
 
-        unsafe {
-            WaitForSingleObject(_event.handle, INFINITE)
-        };
-
+        unsafe { WaitForSingleObject(_event.handle, INFINITE) };
 
         println!("Set context stop is true.");
         ctx.stop = true;

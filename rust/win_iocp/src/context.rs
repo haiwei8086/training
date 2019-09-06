@@ -4,10 +4,18 @@
 use std::{ptr, env, path, process};
 use std::collections::{BTreeMap};
 
-use winapi::um::winnt::{HANDLE};
+
+use winapi::um::winnt::HANDLE;
+use winapi::um::minwinbase::OVERLAPPED;
+use winapi::shared::ws2def::{WSABUF};
+use winapi::um::winsock2::{u_long, SOCKET};
 
 use winapi::um::handleapi::CloseHandle;
+use winapi::um::winsock2::{closesocket, shutdown};
 
+
+pub const MAX_THREADS: u32 = 2;
+pub const MAX_BUFFER_LEN: u32 = 4096;
 
 
 pub struct SignalEvent {
@@ -33,7 +41,6 @@ pub struct Context {
 
     pub stop: bool,
 }
-
 
 
 impl<'a> Context {
@@ -132,4 +139,67 @@ impl Drop for Context {
 
     }
     
+}
+
+
+
+
+struct SocketContext {
+    pub socket: SOCKET,                     // Socket
+}
+
+
+struct PerIOContext {
+    pub ol: OVERLAPPED,                     // 每一个重叠I/O网络操作都要有一个
+    pub accept_fd: SOCKET,                  // 这个I/O操作所使用的Socket，每个连接的都是一样的
+    pub wsa_buf: WSABUF,                    // 存储数据的缓冲区，用来给重叠操作传递参数的，关于WSABUF后面
+    pub buf: [i8; MAX_BUFFER_LEN as usize], // 真正接收数据得buffer
+    pub recv_bytes: u32,                    // 接收的数量
+    pub send_bytes: u32,                    // 发送的数量
+    pub action: usize,                      // 标志这个重叠I/O操作是做什么的，例如Accept/Recv等
+}
+
+
+
+impl SocketContext {
+    pub fn new() -> Self {
+        SocketContext {
+            socket: INVALID_SOCKET
+        }
+    }
+}
+
+impl PerIOContext {
+
+    pub fn new() -> Self {
+        let mut ctx = PerIOContext {
+            ol: unsafe { mem::zeroed() },
+            accept_fd: INVALID_SOCKET,
+            wsa_buf: unsafe { mem::zeroed() },
+            buf: unsafe { mem::zeroed() },
+            recv_bytes: 0,
+            send_bytes: 0,
+            action: 10,
+        };
+
+        ctx.wsa_buf = WSABUF {
+            len: MAX_BUFFER_LEN,
+            buf: ctx.buf.as_ptr() as *mut _,
+        };
+
+        ctx
+    }
+
+    pub fn reset(&mut self) {
+        self.ol = unsafe { mem::zeroed() };
+        self.buf = unsafe { mem::zeroed() };
+        self.action = 10;
+        self.recv_bytes = 0;
+        self.send_bytes = 0;
+
+        self.wsa_buf = WSABUF {
+            len: MAX_BUFFER_LEN,
+            buf: self.buf.as_ptr() as *mut _,
+        };
+    }
 }
