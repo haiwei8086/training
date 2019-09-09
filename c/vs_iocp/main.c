@@ -11,6 +11,17 @@
 #define   DATA_BUFSIZE   4096   
 #define   MAX_THREADS 1
 
+
+static GUID GuidAcceptEx			= WSAID_ACCEPTEX;
+static GUID GuidGetAcceptSockAddrs	= WSAID_GETACCEPTEXSOCKADDRS;
+
+LPFN_ACCEPTEX				lpfnAcceptEx;
+LPFN_GETACCEPTEXSOCKADDRS	lpfnGetAcceptSockAddrs;
+
+HANDLE						CompletionPort;
+SOCKET                      ListenSocket;
+
+
 typedef   struct
 {
 	OVERLAPPED   Overlapped;
@@ -24,151 +35,150 @@ typedef   struct
 }   PER_IO_OPERATION_DATA, * LPPER_IO_OPERATION_DATA;
 
 
-typedef   struct
-{
-	SOCKET   Socket;
-	LPFN_ACCEPTEX AcceptEx;
-	LPFN_GETACCEPTEXSOCKADDRS GetAcceptSockAddrs;
-
-}   PER_HANDLE_DATA, * LPPER_HANDLE_DATA;
-
-
-DWORD   WINAPI   ServerWorkerThread(LPVOID   CompletionPortID);
 DWORD   WINAPI   SampleWorkerThread(LPVOID   CompletionPortID);
 
-int PostAcceptEx(PER_HANDLE_DATA* handle_data, PER_IO_OPERATION_DATA* PerIoData);
-int PostRecv(PER_HANDLE_DATA* handle_data, PER_IO_OPERATION_DATA* PerIoData);
-int PostSend(PER_HANDLE_DATA* handle_data, PER_IO_OPERATION_DATA* PerIoData);
-int DoAccept(HANDLE CompletionPort, PER_HANDLE_DATA* PerHandleData, PER_IO_OPERATION_DATA* PerIoData);
-int DoRecv(PER_HANDLE_DATA* PerHandleData, PER_IO_OPERATION_DATA* PerIoData);
-int DoSend(PER_HANDLE_DATA* PerHandleData, PER_IO_OPERATION_DATA* PerIoData);
+
+int PostAcceptEx(PER_IO_OPERATION_DATA* PerIoData);
+int PostRecv(PER_IO_OPERATION_DATA* PerIoData);
+int PostSend(PER_IO_OPERATION_DATA* PerIoData);
+
+int DoAccept(HANDLE CompletionPort, PER_IO_OPERATION_DATA* PerIoData);
+int DoRecv(PER_IO_OPERATION_DATA* PerIoData);
+int DoSend(PER_IO_OPERATION_DATA* PerIoData);
 
 
-int main(void)
-{
-	SOCKADDR_IN   InternetAddr;
-	SOCKET   Listen;
-	SOCKET   Accept;
-	HANDLE   CompletionPort;
-	SYSTEM_INFO   SystemInfo;
-	LPPER_HANDLE_DATA   PerHandleData;
-	LPPER_IO_OPERATION_DATA   PerIoData;
-	int   i;
-	DWORD   RecvBytes;
-	DWORD   Flags;
-	DWORD   ThreadID;
-	WSADATA   wsaData;
-	DWORD   Ret;
 
-	HANDLE   ThreadHandle;
-	LPFN_ACCEPTEX lpfnAcceptEx = NULL;
-	GUID GuidAcceptEx = WSAID_ACCEPTEX;
-	GUID GuidGetAcceptSockAddrs = WSAID_GETACCEPTEXSOCKADDRS;
+int main2(void)
+{	
+	SOCKADDR_IN					InternetAddr;
+	SYSTEM_INFO					SystemInfo;
+	LPPER_IO_OPERATION_DATA		PerIoData;
+
+	DWORD		Ret;
+	int			i;
+	DWORD		ThreadID;
+	WSADATA		wsaData;
+	HANDLE		ThreadHandle;
+	
 	int iResult = 0;
 	DWORD dwBytes;
 	
-	int iOptVal = 0;
+	int iOptVal = 1;
 	int iOptLen = sizeof(int);
 
 
 	if ((Ret = WSAStartup(0x0202, &wsaData)) != 0)
 	{
 		printf("WSAStartup() failed. error: %d\n", Ret);
-		return;
+		return -1;
+	}
+	if (LOBYTE(wsaData.wVersion) != 2 || HIBYTE(wsaData.wVersion) != 2) 
+	{
+		printf("Request Windows Socket Version 2.2 Error!\n");
+		WSACleanup();
+		return -1;
 	}
 
-
-	// 设置一个I/O完成端口.   
 	if ((CompletionPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0)) == NULL)
 	{
 		printf("CreateIoCompletionPort Failed，err: %d\n", GetLastError());
-		return;
+		return -1;
 	}
 
-	// 测试系统中有多少cpu处理器 
+
 	GetSystemInfo(&SystemInfo);
 
 
-	// 基于系统可用的处理器创建工作线程，为每个处理器创建连个线程   
 	for (i = 0; i < MAX_THREADS; i++)
-	{
-		// 创建一个服务端线程并且传递一个完成端口给这个线程.   
+	{  
 		if ((ThreadHandle = CreateThread(NULL, 0, SampleWorkerThread, CompletionPort, 0, &ThreadID)) == NULL)
 		{
-			printf("CreateThread()发生了如下错误： %d\n", GetLastError());
-			return;
+			printf("CreateThread() failed. error: %d\n", GetLastError());
+			WSACleanup();
+			return -1;
 		}
 	}
 
-	//   创建一个监听套接字 
-	if ((Listen = WSASocketW(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED)) == INVALID_SOCKET)
+	
+	if ((ListenSocket = WSASocketW(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED)) == INVALID_SOCKET)
 	{
-		printf("WSASocket() 发生了如下错误： %d\n", WSAGetLastError());
-		return;
-	}
-	else
-	{
-		printf("创建监听套接字成功\n");
+		printf("WSASocket() failed. error: %d\n", WSAGetLastError());
+		WSACleanup();
+		return -1;
 	}
 
+	CreateIoCompletionPort((HANDLE)ListenSocket, CompletionPort, 0, 0);
 
-	// 创建一个套接字信息结构体去联系起来socket   
-	if ((PerHandleData = (LPPER_HANDLE_DATA)GlobalAlloc(GPTR, sizeof(PER_HANDLE_DATA))) == NULL)
-	{
-		printf("GlobalAlloc()   发生了如下错误：   %d\n", GetLastError());
-		return;
-	}
-	PerHandleData->Socket = Listen;
-	PerHandleData->AcceptEx = NULL;
-	PerHandleData->GetAcceptSockAddrs = NULL;
 
-	CreateIoCompletionPort((HANDLE)PerHandleData->Socket, CompletionPort, (DWORD)PerHandleData, 0);
-
+	setsockopt(ListenSocket, SOL_SOCKET, SO_KEEPALIVE, (char*)& iOptVal, iOptLen);
 
 	InternetAddr.sin_family = AF_INET;
 	InternetAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	InternetAddr.sin_port = htons(PORT);
-	if (bind(Listen, (PSOCKADDR)& InternetAddr, sizeof(InternetAddr)) == SOCKET_ERROR)
+	if (bind(ListenSocket, (PSOCKADDR)& InternetAddr, sizeof(InternetAddr)) == SOCKET_ERROR)
 	{
-		printf("bind()端口或IP时发生了如下错误： %d\n", WSAGetLastError());
-		return;
-	}
-	else
-	{
-		printf("绑定端口%d成功\n", PORT);
-	}
+		printf("bind() failed. error: %d\n", WSAGetLastError());
 
-	setsockopt(Listen, SOL_SOCKET, SO_KEEPALIVE, (char*)& iOptVal, iOptLen);
-
-
-	// 准备socket 用来监听   
-	if (listen(Listen, 5) == SOCKET_ERROR)
-	{
-		printf("listen() 发生了如下错误   %d\n", WSAGetLastError());
-		return;
-	}
-	else
-	{
-		printf("预处理成功，开始在端口 %d 处监听...\n", PORT);
+		closesocket(ListenSocket);
+		WSACleanup();
+		CloseHandle(CompletionPort);
+		return -1;
 	}
 
+
+	if (listen(ListenSocket, SOMAXCONN) == SOCKET_ERROR)
+	{
+		printf("listen() failed. error: %d\n", WSAGetLastError());
+		
+		closesocket(ListenSocket);
+		WSACleanup();
+		CloseHandle(CompletionPort);
+		return -1;
+	}
+
+
+	printf("IOCP: %p, Socket: %I64d \n", CompletionPort, ListenSocket);
+	printf("Scoket listen on port: %d \n", PORT);
 	
 
+	iResult = WSAIoctl(
+		ListenSocket,
+		SIO_GET_EXTENSION_FUNCTION_POINTER, 
+		&GuidAcceptEx, 
+		sizeof(GUID),
+		&lpfnAcceptEx,
+		sizeof(LPFN_ACCEPTEX),
+		&dwBytes, 
+		NULL, 
+		NULL);
 
-	iResult = WSAIoctl(Listen, SIO_GET_EXTENSION_FUNCTION_POINTER, &GuidAcceptEx, sizeof(GuidAcceptEx), &(PerHandleData->AcceptEx), sizeof(PerHandleData->AcceptEx),&dwBytes, NULL, NULL);
 	if (iResult == SOCKET_ERROR) {
-		wprintf(L"WSAIoctl failed with error: %u\n", WSAGetLastError());
-		closesocket(Listen);
+		wprintf(L"WSAIoctl failed. error: %u\n", WSAGetLastError());
+
+		closesocket(ListenSocket);
 		WSACleanup();
-		return 1;
+		CloseHandle(CompletionPort);
+		return -1;
 	}
 
-	iResult = WSAIoctl(Listen, SIO_GET_EXTENSION_FUNCTION_POINTER, &GuidGetAcceptSockAddrs, sizeof(GuidGetAcceptSockAddrs), &(PerHandleData->GetAcceptSockAddrs), sizeof(PerHandleData->GetAcceptSockAddrs), &dwBytes, NULL, NULL);
+	iResult = WSAIoctl(
+		ListenSocket,
+		SIO_GET_EXTENSION_FUNCTION_POINTER, 
+		&GuidGetAcceptSockAddrs, 
+		sizeof(GUID),
+		&lpfnGetAcceptSockAddrs,
+		sizeof(LPFN_GETACCEPTEXSOCKADDRS),
+		&dwBytes, 
+		NULL, 
+		NULL);
+
 	if (iResult == SOCKET_ERROR) {
-		wprintf(L"WSAIoctl failed with error: %u\n", WSAGetLastError());
-		closesocket(Listen);
+		wprintf(L"WSAIoctl failed. error: %u\n", WSAGetLastError());
+		
+		closesocket(ListenSocket);
 		WSACleanup();
-		return 1;
+		CloseHandle(CompletionPort);
+		return -1;
 	}
 	
 
@@ -176,8 +186,12 @@ int main(void)
 	{
 		if ((PerIoData = (LPPER_IO_OPERATION_DATA)GlobalAlloc(GPTR, sizeof(PER_IO_OPERATION_DATA))) == NULL)
 		{
-			printf("GlobalAlloc() 发生了如下错误： %d\n", GetLastError());
-			return;
+			printf("GlobalAlloc() failed. error: %d\n", GetLastError());
+
+			closesocket(ListenSocket);
+			WSACleanup();
+			CloseHandle(CompletionPort);
+			return -1;
 		}
 		ZeroMemory(&(PerIoData->Overlapped), sizeof(OVERLAPPED));
 		PerIoData->Accept = INVALID_SOCKET;
@@ -187,22 +201,26 @@ int main(void)
 		PerIoData->DataBuf.buf = PerIoData->Buffer;
 		PerIoData->Action = 0;
 
-		PostAcceptEx(PerHandleData, PerIoData);
+		PostAcceptEx(PerIoData);
 	}
 
+
+
 	WaitForSingleObject(ThreadHandle, INFINITE);
+
+	return 0;
 }
 
 
-int PostAcceptEx(PER_HANDLE_DATA* PerHandleData, PER_IO_OPERATION_DATA* PerIoData)
+int PostAcceptEx(PER_IO_OPERATION_DATA* PerIoData)
 {
-	printf("PostAcceptEx \n");
+	printf("PostAcceptEx. PerIoData: %p \n", PerIoData);
 
 	PerIoData->Action = 0;
-	PerIoData->Accept = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_IP, NULL, 0, WSA_FLAG_OVERLAPPED);
+	PerIoData->Accept = WSASocketW(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 
-	PerHandleData->AcceptEx(
-		PerHandleData->Socket,
+	lpfnAcceptEx(
+		ListenSocket,
 
 		PerIoData->Accept,
 		PerIoData->DataBuf.buf,
@@ -214,27 +232,33 @@ int PostAcceptEx(PER_HANDLE_DATA* PerHandleData, PER_IO_OPERATION_DATA* PerIoDat
 		&(PerIoData->BytesRECV),
 		&(PerIoData->Overlapped)
 	);
+
+	printf("PostAcceptEx(). last error: %d\n", GetLastError());
 		
 	return 0;
 }
 
 
-int DoAccept(HANDLE CompletionPort, PER_HANDLE_DATA* PerHandleData, PER_IO_OPERATION_DATA* PerIoData)
+int DoAccept(HANDLE CompletionPort, PER_IO_OPERATION_DATA* PerIoData)
 {
-	printf("DoAccept \n");
+	printf("DoAccept. PerIoData: %p \n", PerIoData);
 
-	LPPER_HANDLE_DATA   newPerHandleData;
+	SOCKET client_socket;
 	LPPER_IO_OPERATION_DATA newPerIoData;
 
 	SOCKADDR_IN* RemoteSockAddr = NULL;
 	SOCKADDR_IN* LocalSockAddr = NULL;
 	int AddrLen = sizeof(SOCKADDR_IN);
-	
-
-	setsockopt(PerIoData->Accept, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*)& PerHandleData->Socket, sizeof(SOCKET));
 
 
-	PerHandleData->GetAcceptSockAddrs(
+	client_socket = PerIoData->Accept;
+
+	if (setsockopt(client_socket, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*)& ListenSocket, sizeof(SOCKET)) == -1)
+	{
+		printf("setsockopt(SO_UPDATE_ACCEPT_CONTEXT) failed. error: %d\n", GetLastError());
+	}
+
+	lpfnGetAcceptSockAddrs(
 		PerIoData->DataBuf.buf,
 		PerIoData->DataBuf.len - ((AddrLen + 16) * 2),
 		AddrLen + 16, 
@@ -242,17 +266,6 @@ int DoAccept(HANDLE CompletionPort, PER_HANDLE_DATA* PerHandleData, PER_IO_OPERA
 		(SOCKADDR * *)& LocalSockAddr, &AddrLen,
 		(SOCKADDR * *)& RemoteSockAddr, &AddrLen
 	);
-
-
-	if ((newPerHandleData = (LPPER_HANDLE_DATA)GlobalAlloc(GPTR, sizeof(PER_HANDLE_DATA))) == NULL)
-	{
-		printf("GlobalAlloc()   发生了如下错误：   %d\n", GetLastError());
-		return -1;
-	}
-	newPerHandleData->Socket = PerIoData->Accept;
-	newPerHandleData->AcceptEx = PerHandleData->AcceptEx;
-	newPerHandleData->GetAcceptSockAddrs = PerHandleData->GetAcceptSockAddrs;
-
 
 	// Reset PerIoData
 	ZeroMemory(&(PerIoData->Overlapped), sizeof(OVERLAPPED));
@@ -264,23 +277,23 @@ int DoAccept(HANDLE CompletionPort, PER_HANDLE_DATA* PerHandleData, PER_IO_OPERA
 	PerIoData->Action = 0;
 
 
-	PostAcceptEx(PerHandleData, PerIoData);
+	PostAcceptEx(PerIoData);
 
 
-	if (NULL == CreateIoCompletionPort((HANDLE)newPerHandleData->Socket, CompletionPort, (DWORD)newPerHandleData, 0))
+	if (NULL == CreateIoCompletionPort((HANDLE)client_socket, CompletionPort, 0, 0))
 	{
-		printf("CreateIoCompletionPort()   发生了如下错误：   %d\n", GetLastError());
+		printf("CreateIoCompletionPort() failed. error: %d\n", GetLastError());
 		return -1;
 	}
 
 
 	if ((newPerIoData = (LPPER_IO_OPERATION_DATA)GlobalAlloc(GPTR, sizeof(PER_IO_OPERATION_DATA))) == NULL)
 	{
-		printf("GlobalAlloc() 发生了如下错误： %d\n", GetLastError());
-		return;
+		printf("GlobalAlloc() faild. error: %d\n", GetLastError());
+		return -1;
 	}
 	ZeroMemory(&(newPerIoData->Overlapped), sizeof(OVERLAPPED));
-	newPerIoData->Accept = newPerHandleData->Socket;
+	newPerIoData->Accept = client_socket;
 	newPerIoData->BytesSEND = 0;
 	newPerIoData->BytesRECV = 0;
 	newPerIoData->DataBuf.len = DATA_BUFSIZE;
@@ -288,14 +301,13 @@ int DoAccept(HANDLE CompletionPort, PER_HANDLE_DATA* PerHandleData, PER_IO_OPERA
 	newPerIoData->Action = 0;
 
 
-	PostRecv(newPerHandleData, newPerIoData);
-
+	PostRecv(newPerIoData);
 
 	return 0;
 }
 
 
-int PostRecv(PER_HANDLE_DATA* handle_data, PER_IO_OPERATION_DATA* PerIoData) 
+int PostRecv(PER_IO_OPERATION_DATA* PerIoData) 
 {
 	printf("PostRecv \n");
 
@@ -310,7 +322,7 @@ int PostRecv(PER_HANDLE_DATA* handle_data, PER_IO_OPERATION_DATA* PerIoData)
 }
 
 
-int DoRecv(PER_HANDLE_DATA* PerHandleData, PER_IO_OPERATION_DATA* PerIoData) 
+int DoRecv(PER_IO_OPERATION_DATA* PerIoData) 
 {
 	printf("Recv data： %s \n", PerIoData->DataBuf.buf);
 
@@ -321,22 +333,19 @@ int DoRecv(PER_HANDLE_DATA* PerHandleData, PER_IO_OPERATION_DATA* PerIoData)
 	PerIoData->DataBuf.buf = PerIoData->Buffer;
 	PerIoData->Action = 10;
 
-
-	PostSend(PerHandleData, PerIoData);
-
+	PostSend(PerIoData);
 
 	return 0;
 }
 
 
-int PostSend(PER_HANDLE_DATA* handle_data, PER_IO_OPERATION_DATA* PerIoData) 
+int PostSend(PER_IO_OPERATION_DATA* PerIoData) 
 {
 	printf("PostSend \n");
 
 	DWORD dwFlags = 0;
 	DWORD dwBytes = 0;
 	DWORD SendBytes = 0;
-	DWORD Flags;
 
 	char bufs[] = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\nWelcome to Server.";
 	
@@ -365,141 +374,53 @@ int PostSend(PER_HANDLE_DATA* handle_data, PER_IO_OPERATION_DATA* PerIoData)
 }
 
 
-int DoSend(PER_HANDLE_DATA* PerHandleData, PER_IO_OPERATION_DATA* PerIoData) 
+int DoSend(PER_IO_OPERATION_DATA* PerIoData) 
 {
 	printf("DoSend \n");
 
 	shutdown(PerIoData->Accept, SD_BOTH);
-
 	GlobalFree(PerIoData);
+	return 0;
 }
 
 
-DWORD   WINAPI   ServerWorkerThread(LPVOID   CompletionPortID)
+DWORD   WINAPI   SampleWorkerThread(LPVOID   Params)
 {
-	HANDLE   CompletionPort = (HANDLE)CompletionPortID;
-	DWORD   BytesTransferred;
-	LPOVERLAPPED   Overlapped;
-	LPPER_HANDLE_DATA   PerHandleData;
-	LPPER_IO_OPERATION_DATA   PerIoData;
-	DWORD   SendBytes, RecvBytes;
-	DWORD   Flags;
+	HANDLE CompletionPort = (HANDLE)Params;
+	DWORD  BytesTransferred;
+	PULONG_PTR  lpCompletionKey = NULL;
+
+	LPOVERLAPPED lpOverlapped;
+	LPPER_IO_OPERATION_DATA  PerIoData;
+
 
 	while (TRUE)
 	{
-
-		if (GetQueuedCompletionStatus(CompletionPort, &BytesTransferred, (LPDWORD)& PerHandleData, (LPOVERLAPPED*)& PerIoData, INFINITE) == 0)
+		if (GetQueuedCompletionStatus(CompletionPort, &BytesTransferred, &lpCompletionKey, (LPOVERLAPPED*)& PerIoData, INFINITE) == 0)
 		{
-			printf("GetQueuedCompletionStatus   发生了如下错误： %d\n", GetLastError());
+			printf("GetQueuedCompletionStatus() failed. error: %d\n", GetLastError());
 			return   0;
 		}
-
-		//首先检查一下去套接字看是否在上发生了错误并且如果发生了错误就关闭套接
-		//字并且清除与套接字连接的 SOCKET_INFORMATION结构信息体 
-		if (BytesTransferred == 0)
-		{
-			printf("正在关闭socket   %d\n", PerHandleData->Socket);
-
-			if (closesocket(PerHandleData->Socket) == SOCKET_ERROR)
-			{
-				printf("closesocket()   发生了如下错误： %d\n", WSAGetLastError());
-				return   0;
-			}
-
-			GlobalFree(PerHandleData);
-			GlobalFree(PerIoData);
-			continue;
-		}
-		//检查如果 BytesRECV字段等于0，这就意味着一个 WSARecv调用刚刚完成了所以从完成的WSARecv()调用中
-		//用BytesTransferred值更新 BytesRECV字段 
-		if (PerIoData->BytesRECV == 0)
-		{
-			PerIoData->BytesRECV = BytesTransferred;
-			PerIoData->BytesSEND = 0;
-		}
-		else
-		{
-			PerIoData->BytesSEND += BytesTransferred;
-		}
-
-		if (PerIoData->BytesRECV > PerIoData->BytesSEND)
-		{
-			//发布另外一个 WSASend()请求
-			//既然WSASend()不是 gauranteed去发送所有字节的请求
-			//继续调用 WSASend()发送直到所有收到的字节被发送 
-
-			ZeroMemory(&(PerIoData->Overlapped), sizeof(OVERLAPPED));
-
-			PerIoData->DataBuf.buf = PerIoData->Buffer + PerIoData->BytesSEND;
-			PerIoData->DataBuf.len = PerIoData->BytesRECV - PerIoData->BytesSEND;
-
-			if (WSASend(PerHandleData->Socket, &(PerIoData->DataBuf), 1, &SendBytes, 0,
-				&(PerIoData->Overlapped), NULL) == SOCKET_ERROR)
-			{
-				if (WSAGetLastError() != ERROR_IO_PENDING)
-				{
-					printf("WSASend() 发生了如下错误：   %d\n", WSAGetLastError());
-					return   0;
-				}
-			}
-		}
-		else
-		{
-			PerIoData->BytesRECV = 0;
-			//现在没有更多的字节发送过去用来post另外一个WSARecv()请求 
-
-			Flags = 0;
-			ZeroMemory(&(PerIoData->Overlapped), sizeof(OVERLAPPED));
-
-			PerIoData->DataBuf.len = DATA_BUFSIZE;
-			PerIoData->DataBuf.buf = PerIoData->Buffer;
-
-			if (WSARecv(PerHandleData->Socket, &(PerIoData->DataBuf), 1, &RecvBytes, &Flags,
-				&(PerIoData->Overlapped), NULL) == SOCKET_ERROR)
-			{
-				if (WSAGetLastError() != ERROR_IO_PENDING)
-				{
-					printf("WSARecv() 发生了如下错误：   %d\n", WSAGetLastError());
-					return   0;
-				}
-			}
-		}
-	}
-}
+		//PerIoData = (LPPER_IO_OPERATION_DATA)CONTAINING_RECORD(lpOverlapped, PER_IO_OPERATION_DATA, Overlapped);
 
 
-DWORD   WINAPI   SampleWorkerThread(LPVOID   CompletionPortID)
-{
-	HANDLE   CompletionPort = (HANDLE)CompletionPortID;
-	DWORD   BytesTransferred;
-	LPOVERLAPPED   Overlapped;
-	LPPER_HANDLE_DATA   PerHandleData;
-	LPPER_IO_OPERATION_DATA   PerIoData;
-	DWORD   SendBytes, RecvBytes;
-	DWORD   Flags;
-
-	while (TRUE)
-	{
-
-		if (GetQueuedCompletionStatus(CompletionPort, &BytesTransferred, (LPDWORD)& PerHandleData, (LPOVERLAPPED*)& PerIoData, INFINITE) == 0)
-		{
-			printf("GetQueuedCompletionStatus   发生了如下错误： %d\n", GetLastError());
-			return   0;
-		}
-
+		printf("GetQueuedCompletionStatus. PerIoData: %p \n", PerIoData);
 		
+
+		printf("Bytes transferred: %d \n", BytesTransferred);
 		printf("PerIoData->Action： %d\n", PerIoData->Action);
 
+		
 		switch (PerIoData->Action)
 		{
 		case 0:
-			DoAccept(CompletionPort, PerHandleData, PerIoData);
+			DoAccept(CompletionPort, PerIoData);
 			break;
 		case 1:
-			DoRecv(PerHandleData, PerIoData);
+			DoRecv(PerIoData);
 			break;
 		case 2:
-			DoSend(PerHandleData, PerIoData);
+			DoSend(PerIoData);
 			break;
 		default:
 
