@@ -1,14 +1,14 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use std::{ptr, env, path, process};
+use std::{ptr, env, mem, path, process};
 use std::collections::{BTreeMap};
 
 
 use winapi::um::winnt::HANDLE;
 use winapi::um::minwinbase::OVERLAPPED;
 use winapi::shared::ws2def::{WSABUF};
-use winapi::um::winsock2::{u_long, SOCKET};
+use winapi::um::winsock2::{u_long, SOCKET, INVALID_SOCKET};
 
 use winapi::um::handleapi::CloseHandle;
 use winapi::um::winsock2::{closesocket, shutdown};
