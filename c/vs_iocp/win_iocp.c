@@ -12,7 +12,8 @@
 static GUID ax_guid = WSAID_ACCEPTEX;
 static GUID as_guid = WSAID_GETACCEPTEXSOCKADDRS;
 
-char res_bufs[] = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\nWelcome to Server.";
+const char res_bufs[] = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\nWelcome to Server.";
+
 
 LPFN_ACCEPTEX              lpfn_AcceptEx;
 LPFN_GETACCEPTEXSOCKADDRS  lpfn_GetAcceptExSockAddrs;
@@ -376,7 +377,6 @@ int post_accept_ex()
 
 	printf("post_accept_ex. listner: %I64d, io_ctx: %p \n", listener, io_ctx);
 
-
 	return 0;
 }
 
@@ -388,7 +388,6 @@ int do_accept(HANDLE iocp, Pre_IO_Context* io_ctx)
 	SOCKADDR_IN* local_sock_addr = NULL;
 	SOCKADDR_IN* remote_sock_addr = NULL;
 	int addr_len = sizeof(SOCKADDR_IN);
-
 		
 	if (-1 == setsockopt(io_ctx->accept, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*)& listener, sizeof(SOCKET)))
 	{
@@ -437,14 +436,10 @@ int post_recv(Pre_IO_Context* io_ctx)
 	ret = WSARecv(io_ctx->accept, &(io_ctx->wsa_buf), 1, &bytes, &flags, &(io_ctx->overlapped), NULL);
 
 	err_no = WSAGetLastError();
-	if (-1 == ret && WSA_IO_PENDING != err_no) {
-		
+	if (-1 == ret && WSA_IO_PENDING != err_no) 
+	{
+		if (err_no == WSAEWOULDBLOCK) printf("WSARecv() not ready");
 
-		if (err_no == WSAEWOULDBLOCK) 
-		{
-			printf("WSARecv() not ready");
-		}
-	
 		printf("WSARecv() faild. client socket: %I64d, error: %d\n", io_ctx->accept, err_no);
 
 		return -1;
@@ -465,7 +460,6 @@ int do_recv(Pre_IO_Context* io_ctx)
 	io_ctx->wsa_buf.len = Max_Buffer_Size;
 	io_ctx->wsa_buf.buf = io_ctx->buf;
 	io_ctx->action = 10;
-
 
 	return 0;
 }
