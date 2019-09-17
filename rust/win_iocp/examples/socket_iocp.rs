@@ -64,6 +64,7 @@ struct ClientContent {
 }
 
 
+#[derive(Clone)]
 struct PerIOContext {
     pub ol: OVERLAPPED,                     // 每一个重叠I/O网络操作都要有一个
     pub accept_fd: SOCKET,                  // 这个I/O操作所使用的Socket，每个连接的都是一样的
@@ -182,9 +183,11 @@ fn main() {
     ctx.accept_ex_fn = accept_ex_ref(ctx.listen_fd);
     ctx.get_accept_sock_addrs_fn = get_accept_sock_addrs_ref(ctx.listen_fd);
 
+    
+    let mut io_ctx_list = vec![PerIOContext::new(); MAX_WORKERS as usize];
 
-    for _ in 0..MAX_WORKERS {
-        post_accept_ex(&ctx);
+    for i in 0..MAX_WORKERS {
+        post_accept_ex(&ctx, &mut io_ctx_list[i as usize]);
     }
 
     unsafe {
@@ -312,13 +315,15 @@ unsafe extern "system" fn worker(param: LPVOID) -> u32 {
         println!("QueuedCompletionStatus, client_ctx: {:?}, io_ctx: {:?}", client_ctx_ptr, io_ctx_ptr);
 
         let mut io_ctx = mem::transmute::<_, &mut PerIOContext>(io_ctx_ptr);
+        let mut new_io_ctx = PerIOContext::new();
+        new_io_ctx.action = 20;
 
-        println!("Action: {:?}", io_ctx.action);
-        
+        println!("Action: {:?}, new_io: {:p}", io_ctx.action, &mut new_io_ctx as *mut _);
+
 
         match io_ctx.action {
             0 => {
-                post_accept_ex(&ctx);
+                post_accept_ex(&ctx, &mut new_io_ctx);
                 do_accept(&ctx, &mut io_ctx);
                 post_recv(&mut io_ctx);
             },
@@ -333,9 +338,10 @@ unsafe extern "system" fn worker(param: LPVOID) -> u32 {
 }
 
 
-fn post_accept_ex(ctx: &Context) {
-    let mut io_ctx = PerIOContext::new();
-    
+fn post_accept_ex(ctx: &Context, io_ctx: &mut PerIOContext) {
+    println!("post_accept_ex, io_ctx action: {:?}", io_ctx.action);
+
+
     let sock_len = mem::size_of::<SOCKADDR_IN>() as u32;
 
     io_ctx.accept_fd = unsafe { WSASocketW(AF_INET, SOCK_STREAM, 0, ptr::null_mut(), 0, WSA_FLAG_OVERLAPPED) };
@@ -376,11 +382,11 @@ fn do_accept(ctx: &Context, io_ctx: &mut PerIOContext) {
             io_ctx.accept_fd, 
             SOL_SOCKET, 
             SO_UPDATE_ACCEPT_CONTEXT, 
-            ctx.listen_fd as *const _, 
+            &ctx.listen_fd as *const _ as *const _, 
             mem::size_of::<SOCKET>() as c_int)
     };
 
-    println!("setsockopt(SO_UPDATE_ACCEPT_CONTEXT)");
+    println!("setsockopt(SO_UPDATE_ACCEPT_CONTEXT), WSAGetLastError: {:?}", unsafe { WSAGetLastError() });
     
     /*
     let mut locale_addr_ptr: SOCKADDR_IN = unsafe { mem::zeroed() };
