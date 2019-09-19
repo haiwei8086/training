@@ -64,14 +64,11 @@ struct ClientContent {
 }
 
 
-#[derive(Clone)]
-struct PerIOContext {
+pub struct PerIOContext {
     pub ol: OVERLAPPED,                     // 每一个重叠I/O网络操作都要有一个
     pub accept_fd: SOCKET,                  // 这个I/O操作所使用的Socket，每个连接的都是一样的
     pub wsa_buf: WSABUF,                    // 存储数据的缓冲区，用来给重叠操作传递参数的，关于WSABUF后面
     pub buf: [i8; MAX_BUFFER_LEN as usize], // 真正接收数据得buffer
-    pub recv_bytes: u32,                    // 接收的数量
-    pub send_bytes: u32,                    // 发送的数量
     pub action: usize,                      // 标志这个重叠I/O操作是做什么的，例如Accept/Recv等
 }
 
@@ -97,31 +94,26 @@ impl ClientContent {
 }
 
 impl PerIOContext {
+
     pub fn new() -> Self {
-        let mut ctx = PerIOContext {
+        let buf: [i8; MAX_BUFFER_LEN as usize] = unsafe { mem::MaybeUninit::uninit().assume_init() }; 
+
+        PerIOContext {
             ol: unsafe { mem::zeroed() },
             accept_fd: INVALID_SOCKET,
-            wsa_buf: unsafe { mem::zeroed() },
-            buf: unsafe { mem::zeroed() },
-            recv_bytes: 0,
-            send_bytes: 0,
+            wsa_buf: WSABUF {
+                len: MAX_BUFFER_LEN,
+                buf: buf.as_ptr() as *mut _,
+            },
+            buf: buf,
             action: 10,
-        };
-
-        ctx.wsa_buf = WSABUF {
-            len: MAX_BUFFER_LEN,
-            buf: ctx.buf.as_ptr() as *mut _,
-        };
-
-        ctx
+        }
     }
 
     pub fn reset(&mut self) {
         self.ol = unsafe { mem::zeroed() };
         self.buf = unsafe { mem::zeroed() };
         self.action = 10;
-        self.recv_bytes = 0;
-        self.send_bytes = 0;
 
         self.wsa_buf = WSABUF {
             len: MAX_BUFFER_LEN,
@@ -132,11 +124,12 @@ impl PerIOContext {
 
 impl Drop for PerIOContext {
     fn drop(&mut self) {
-        println!("io ctx drop. socket: {:?}", self.accept_fd);
+        println!("drop io ctx. socket: {:?}", self.accept_fd);
 
         //unsafe { shutdown(self.accept_fd, SD_BOTH) };
     }
 }
+
 
 
 
@@ -183,11 +176,9 @@ fn main() {
     ctx.accept_ex_fn = accept_ex_ref(ctx.listen_fd);
     ctx.get_accept_sock_addrs_fn = get_accept_sock_addrs_ref(ctx.listen_fd);
 
-    
-    let mut io_ctx_list = vec![PerIOContext::new(); MAX_WORKERS as usize];
 
-    for i in 0..MAX_WORKERS {
-        post_accept_ex(&ctx, &mut io_ctx_list[i as usize]);
+    for _ in 0..MAX_WORKERS {
+        unsafe { unsafe_post_accept_ex(&ctx) };
     }
 
     unsafe {
@@ -296,6 +287,7 @@ unsafe extern "system" fn worker(param: LPVOID) -> u32 {
     let ctx = mem::transmute::<_, &mut Context>(param);
 
     println!("Worker Context: {:?}, IOCP: {:?}, Socket: {:?}", param, ctx.iocp, ctx.listen_fd);
+    
 
     loop {
         println!("GetQueuedCompletionStatus...");
@@ -315,40 +307,81 @@ unsafe extern "system" fn worker(param: LPVOID) -> u32 {
         println!("QueuedCompletionStatus, client_ctx: {:?}, io_ctx: {:?}", client_ctx_ptr, io_ctx_ptr);
 
         let mut io_ctx = mem::transmute::<_, &mut PerIOContext>(io_ctx_ptr);
-        let mut new_io_ctx = PerIOContext::new();
-        new_io_ctx.action = 20;
 
-        println!("Action: {:?}, new_io: {:p}", io_ctx.action, &mut new_io_ctx as *mut _);
+        println!("Action: {:?}, io: {:p}", io_ctx.action, &io_ctx);
 
 
         match io_ctx.action {
             0 => {
-                post_accept_ex(&ctx, &mut new_io_ctx);
                 do_accept(&ctx, &mut io_ctx);
                 post_recv(&mut io_ctx);
+
+                unsafe_post_accept_ex(&ctx);
             },
             1 => {
                 do_recv(&io_ctx);
                 post_send(&mut io_ctx);
             },
-            2 => do_send(&io_ctx),
+            2 => {
+                do_send(&io_ctx);
+            },
             _ => println!("Error: {:?}", WSAGetLastError()),
         }
     }
 }
 
 
-fn post_accept_ex(ctx: &Context, io_ctx: &mut PerIOContext) {
-    println!("post_accept_ex, io_ctx action: {:?}", io_ctx.action);
-
+unsafe fn unsafe_post_accept_ex(ctx: &Context) {
+    println!("post_accept_ex");
 
     let sock_len = mem::size_of::<SOCKADDR_IN>() as u32;
+    let mut recv_bytes = 0;
+
+
+    let io_ctx_ptr = Box::into_raw(Box::new(PerIOContext::new()));
+    println!("post_accept_ex, io_ctx_ptr: {:p}", io_ctx_ptr);
+
+
+    let io_ctx = mem::transmute::<_, &mut PerIOContext>(io_ctx_ptr);
+    io_ctx.accept_fd = WSASocketW(AF_INET, SOCK_STREAM, 0, ptr::null_mut(), 0, WSA_FLAG_OVERLAPPED);
+    io_ctx.action = 0;
+
+    println!("post_accept_ex, ctx: {:?}, listener: {:?}, io_ctx: {:p}", ctx as *const _, ctx.listen_fd, &io_ctx);
+
+    (ctx.accept_ex_fn)(
+        ctx.listen_fd,
+        io_ctx.accept_fd,
+
+        &mut io_ctx.wsa_buf.buf as *mut _ as *mut _,
+        0,
+
+        sock_len + 16,
+        sock_len + 16,
+
+        &mut recv_bytes,
+        &mut io_ctx.ol
+    );
+
+
+    let err = WSAGetLastError();
+    if WSA_IO_PENDING != err {
+        println!("accept_ex_fn() failed, WSAGetLastError: {:?}", err);
+    }
+}
+
+
+fn post_accept_ex(ctx: &Context, io_ctx: &mut PerIOContext) {
+
+    let sock_len = mem::size_of::<SOCKADDR_IN>() as u32;
+    let mut recv_bytes = 0;
+
 
     io_ctx.accept_fd = unsafe { WSASocketW(AF_INET, SOCK_STREAM, 0, ptr::null_mut(), 0, WSA_FLAG_OVERLAPPED) };
     io_ctx.action = 0;
 
     println!("post_accept_ex, ctx: {:?}, listener: {:?}, io_ctx: {:p}", ctx as *const _, ctx.listen_fd, &io_ctx as *const _);
 
+    
     unsafe {
         (ctx.accept_ex_fn)(
             ctx.listen_fd,
@@ -360,7 +393,7 @@ fn post_accept_ex(ctx: &Context, io_ctx: &mut PerIOContext) {
             sock_len + 16,
             sock_len + 16,
 
-            &mut io_ctx.recv_bytes,
+            &mut recv_bytes,
             &mut io_ctx.ol
         )
     };
@@ -475,6 +508,7 @@ fn post_send(io_ctx: &mut PerIOContext) {
     println!("post_send, io_ctx: {:?}, client: {:?}", io_ctx as *const _, io_ctx.accept_fd);
 
     let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\nWelcome to Server.".as_bytes();
+    let mut send_bytes = 0;
 
     io_ctx.reset();
     io_ctx.wsa_buf = unsafe { slice2buf(&response) };
@@ -485,7 +519,7 @@ fn post_send(io_ctx: &mut PerIOContext) {
             io_ctx.accept_fd,
             &mut io_ctx.wsa_buf as *mut _,
             1,
-            &mut io_ctx.send_bytes as *mut _,
+            &mut send_bytes,
             0,
             &mut io_ctx.ol,
             None

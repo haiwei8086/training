@@ -20,36 +20,14 @@ pub struct in_addr {
 }
 
 #[derive(Clone)]
-struct PerIOContext {
-    pub wsa_buf: WSABUF,                    // 存储数据的缓冲区，用来给重叠操作传递参数的，关于WSABUF后面
-    pub buf: [i8; MAX_BUFFER_LEN as usize], // 真正接收数据得buffer
-}
-
-struct Context2 {
+struct Context {
     pub title: String,
     pub name: String,
 }
 
-impl PerIOContext {
+impl Context {
     pub fn new() -> Self {
-        let mut ctx = PerIOContext {
-            wsa_buf: unsafe { mem::zeroed() },
-            buf: unsafe { std::mem::uninitialized() },
-        };
-
-        ctx.wsa_buf = WSABUF {
-            len: MAX_BUFFER_LEN,
-            buf: ctx.buf.as_ptr() as *mut _,
-        };
-
-        ctx
-    }
-}
-
-
-impl Context2 {
-    pub fn new() -> Self {
-        Context2 {
+        Context {
             title: "Title".to_owned(),
             name: "Name".to_owned(),
         }
@@ -70,44 +48,39 @@ fn main() {
     println!("&str:master size: {}", mem::size_of_val(&str));
 
     
-    let ctx_1 = PerIOContext::new();
-    let ctx_2 = PerIOContext::new();
+    let ctx_1 = Context::new();
+    let ctx_2 = Context::new();
 
     println!("ctx_1: {:p}", &ctx_1 as *const _);
     println!("ctx_2: {:p}", &ctx_2 as *const _);
 
-    let mut ctx_list = vec![Box::new(PerIOContext::new()); 2];
+
+    let mut ctx_list: Vec<Context> = Vec::new();
+
 
     for i in 0..2 {
         println!("cyc time: {}", i);
 
-        let c = PerIOContext::new();
-        println!("cyc: {}, c: {:p}", i, &c as *const _);
+        ctx_list.push(Context::new());
+        println!("cyc: {}, c: {:p}", i, &ctx_list[i] as *const _);
 
-        ctx_list[i] = Box::new(c);
-        println!("cyc: {}, ctx_list: {:p}", i, &ctx_list[i] as *const _);
-
-        ctx_test();
+        ctx_test(&mut ctx_list);
     }
 
-    for i in 0..2 {
-        println!("ctx_list cyc: {}, item: {:p}", i, &ctx_list[i] as *const _);
+    let len = ctx_list.len();
+
+    ctx_list[len - 1].name = "changed name".to_owned();
+
+    for i in 0..ctx_list.len() {
+        println!("ctx_list cyc: {}, item: {:p}, name: {}", i, &ctx_list[i] as *const _, &ctx_list[i].name);
     }
 }
 
 
-fn ctx_test() {
-    let ctx = PerIOContext::new();
-    println!("ctx_test:ctx: {:p}", &ctx as *const _);
-
-    let ctx2 = Context2::new();
+fn ctx_test(ctx_list: &mut Vec<Context>) {
+    let mut ctx2 = Context::new();
     println!("ctx_test:ctx2: {:p}", &ctx2 as *const _);
+    ctx2.name = "Test name".to_owned();
 
-
-    let box_ctx = Box::new(PerIOContext::new());
-    println!("ctx_test:box_ctx: {:p}", &box_ctx as *const _);
-    
-
-    let addr: sockaddr_in = unsafe { mem::zeroed() };
-    println!("ctx_test:addr: {:p}", &addr as *const _);
+    ctx_list.push(ctx2);
 }
