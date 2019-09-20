@@ -4,9 +4,11 @@
 
 
 use std::{ptr, mem, cmp};
+use std::alloc::{dealloc, Layout};
 use std::ffi::CStr;
 use std::os::raw::{c_int, c_char, c_ushort, c_ulong};
 use std::net::{SocketAddr, SocketAddrV4, IpAddr, Ipv4Addr};
+
 pub type sa_family_t = c_ushort;
 pub type socklen_t = c_int;
 
@@ -63,7 +65,7 @@ struct ClientContent {
     pub socket_fd: SOCKET,
 }
 
-
+#[repr(C)]
 pub struct PerIOContext {
     pub ol: OVERLAPPED,                     // 每一个重叠I/O网络操作都要有一个
     pub accept_fd: SOCKET,                  // 这个I/O操作所使用的Socket，每个连接的都是一样的
@@ -124,6 +126,7 @@ impl PerIOContext {
 
 impl Drop for PerIOContext {
     fn drop(&mut self) {
+
         println!("drop io ctx. socket: {:?}", self.accept_fd);
 
         //unsafe { shutdown(self.accept_fd, SD_BOTH) };
@@ -313,17 +316,16 @@ unsafe extern "system" fn worker(param: LPVOID) -> u32 {
 
         match io_ctx.action {
             0 => {
+                unsafe_post_accept_ex(&ctx);
                 do_accept(&ctx, &mut io_ctx);
                 post_recv(&mut io_ctx);
-
-                unsafe_post_accept_ex(&ctx);
             },
             1 => {
                 do_recv(&io_ctx);
                 post_send(&mut io_ctx);
             },
             2 => {
-                do_send(&io_ctx);
+                do_send(&mut io_ctx);
             },
             _ => println!("Error: {:?}", WSAGetLastError()),
         }
@@ -535,8 +537,12 @@ fn post_send(io_ctx: &mut PerIOContext) {
     }
 }
 
-fn do_send(io_ctx: &PerIOContext) {
+fn do_send(io_ctx: &mut PerIOContext) {
     println!("do_send, io_ctx: {:?}, client: {:?}", io_ctx as *const _, io_ctx.accept_fd);
 
-    unsafe { shutdown(io_ctx.accept_fd, SD_BOTH) };
+    unsafe {
+        shutdown(io_ctx.accept_fd, SD_BOTH);
+        io_ctx.reset();
+        dealloc(io_ctx as *mut _ as *mut _, Layout::new::<PerIOContext>());
+    }
 }
