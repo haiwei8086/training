@@ -34,6 +34,13 @@ impl Context {
     }
 }
 
+impl Drop for Context {
+    fn drop(&mut self) {
+        println!("Drop Context, naem is {}", self.name);
+    }
+}
+
+
 
 fn main() {
     println!("Size test");
@@ -47,7 +54,7 @@ fn main() {
     let str: &str = "master";
     println!("&str:master size: {}", mem::size_of_val(&str));
 
-    
+    /*
     let ctx_1 = Context::new();
     let ctx_2 = Context::new();
 
@@ -56,8 +63,7 @@ fn main() {
 
 
     let mut ctx_list: Vec<Context> = Vec::new();
-
-
+    
     for i in 0..2 {
         println!("cyc time: {}", i);
 
@@ -74,6 +80,11 @@ fn main() {
     for i in 0..ctx_list.len() {
         println!("ctx_list cyc: {}, item: {:p}, name: {}", i, &ctx_list[i] as *const _, &ctx_list[i].name);
     }
+    */
+
+    let ptr = into();
+    out(ptr);
+
 }
 
 
@@ -83,4 +94,22 @@ fn ctx_test(ctx_list: &mut Vec<Context>) {
     ctx2.name = "Test name".to_owned();
 
     ctx_list.push(ctx2);
+}
+
+
+fn into() -> *mut usize {
+    let c = Context::new();
+    let box_c = Box::new(c);
+    let c_ptr = Box::into_raw(box_c);
+
+    println!("Ctx ptr: {:p}", c_ptr);
+
+    c_ptr as *mut _
+}
+
+fn out(ptr: *mut usize) {
+    let mut box_ctx: Box<Context> = unsafe { Box::from_raw(ptr as *mut Context) };
+    box_ctx.name = "from ctx".to_owned();
+
+    println!("Ctx ptr: {:p}", &(*box_ctx));
 }
