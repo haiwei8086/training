@@ -1,8 +1,5 @@
 use std::{mem};
-use winapi::shared::ws2def::{WSABUF};
 
-
-const MAX_BUFFER_LEN: u32 = 4096;
 
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -54,7 +51,7 @@ fn main() {
     let str: &str = "master";
     println!("&str:master size: {}", mem::size_of_val(&str));
 
-    /*
+    
     let ctx_1 = Context::new();
     let ctx_2 = Context::new();
 
@@ -80,7 +77,7 @@ fn main() {
     for i in 0..ctx_list.len() {
         println!("ctx_list cyc: {}, item: {:p}, name: {}", i, &ctx_list[i] as *const _, &ctx_list[i].name);
     }
-    */
+    
 
     let ptr = into();
     out(ptr);

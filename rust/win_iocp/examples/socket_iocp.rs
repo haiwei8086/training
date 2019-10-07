@@ -144,6 +144,9 @@ fn main() {
 
 
     ctx.iocp = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, ptr::null_mut(), 0, 0) };
+    if ctx.iocp.is_null() {
+        panic!("CreateIoCompletionPort() failed.");
+    }
     ctx.listen_fd = unsafe { WSASocketW(AF_INET, SOCK_STREAM, 0, ptr::null_mut(), 0, WSA_FLAG_OVERLAPPED) };
 
     println!("Context: {:?}, IOCP: {:?}, Socket: {:?}", ctx_ptr, ctx.iocp, ctx.listen_fd);
